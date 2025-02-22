@@ -81,6 +81,8 @@ app.use((req, res, next) => {
 // Rutas
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/producto', require('./routes/productoRoutes'));
+app.use('/api/cliente', require('./routes/clienteRoutes'));
+app.use('/api/pedido', require('./routes/pedidoRoutes'));
 
 // Solo iniciar el servidor si no estamos en modo test
 if (process.env.NODE_ENV !== 'test') {
