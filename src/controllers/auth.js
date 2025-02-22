@@ -40,6 +40,9 @@ const login = async (req, res) => {
     const user = await User.findOne({ email: req.body.email });
     if (!user) return res.status(400).json({ msg: 'Usuario no existe' });
 
+    // Verificar si el usuario está activo
+    if (!user.isActive) return res.status(401).json({ msg: 'Usuario inactivo' });
+
     const isMatch = await bcrypt.compare(req.body.password, user.password);
     if (!isMatch) return res.status(400).json({ msg: 'Contraseña incorrecta' });
 
