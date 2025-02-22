@@ -10,6 +10,10 @@ const userSchema = new mongoose.Schema({
     enum: Object.values(ROLES),
     required: true
   },
+  isActive: {
+    type: Boolean,
+    default: true
+  },
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
