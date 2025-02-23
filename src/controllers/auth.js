@@ -40,26 +40,29 @@ const login = async (req, res) => {
     const user = await User.findOne({ email: req.body.email });
     if (!user) return res.status(400).json({ msg: 'Usuario no existe' });
 
+    // Verificar si el usuario está activo
+    if (user.isActive === false) {
+      return res.status(403).json({ msg: 'Usuario desactivado' });
+    }
+
     const isMatch = await bcrypt.compare(req.body.password, user.password);
     if (!isMatch) return res.status(400).json({ msg: 'Contraseña incorrecta' });
 
-    // Crear token con información adicional
-    const token = jwt.sign(
-      { 
-        id: user._id, 
-        email: user.email, 
-        role: user.role 
-      }, 
-      process.env.JWT_SECRET,
-      { expiresIn: '1h' }  // Token expira en 1 hora
-    );
+    // Si es un usuario temporal, verificar si no ha expirado
+    if (user.role === ROLES.TEMPORAL) {
+      if (!user.expiresAt) {
+        await User.deleteOne({ _id: user._id });
+        return res.status(401).json({ msg: 'Usuario temporal inválido' });
+      }
 
-    // Respuesta con token y rol
-    res.json({ 
-      token, 
-      role: user.role,
-      email: user.email
-    });
+      if (user.expiresAt < new Date()) {
+        await User.deleteOne({ _id: user._id });
+        return res.status(401).json({ msg: 'Usuario temporal expirado' });
+      }
+    }
+
+    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET);
+    res.json({ token, role: user.role });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
