@@ -29,14 +29,4 @@ userSchema.pre('save', async function(next) {
   this.password = await bcrypt.hash(this.password, 10);
 });
 
-// Middleware para eliminar usuarios temporales expirados
-userSchema.pre('find', function() {
-  this.where({ 
-    $or: [
-      { expiresAt: null },
-      { expiresAt: { $gt: new Date() } }
-    ]
-  });
-});
-
 module.exports = mongoose.model('User', userSchema);

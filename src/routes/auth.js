@@ -8,7 +8,8 @@ const {
   updateUser,
   deleteUser,
   getCurrentUser,
-  toggleUserStatus
+  toggleUserStatus,
+  reactivateTemporaryUser
 } = require('../controllers/auth');
 const auth = require('../middleware/auth');
 const ROLES = require('../constants/roles');
@@ -40,5 +41,6 @@ router.get('/users/:id', isAdmin, getUserById);
 router.put('/users/:id', isAdmin, updateUser);
 router.put('/users/:id/:action(activate|deactivate)', isAdmin, toggleUserStatus);
 router.delete('/users/:id', isAdmin, deleteUser);
+router.post('/reactivate-temporary', auth, reactivateTemporaryUser);
 
 module.exports = router;

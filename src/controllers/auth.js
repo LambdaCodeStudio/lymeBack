@@ -40,19 +40,26 @@ const login = async (req, res) => {
     const user = await User.findOne({ email: req.body.email });
     if (!user) return res.status(400).json({ msg: 'Usuario no existe' });
 
-    // Verificar si el usuario está activo
-    if (!user.isActive) return res.status(401).json({ msg: 'Usuario inactivo' });
-
     const isMatch = await bcrypt.compare(req.body.password, user.password);
     if (!isMatch) return res.status(400).json({ msg: 'Contraseña incorrecta' });
 
-    if (user.role === ROLES.TEMPORAL && user.expiresAt < new Date()) {
-      await User.deleteOne({ _id: user._id });
-      return res.status(401).json({ msg: 'Usuario temporal expirado' });
-    }
+    // Crear token con información adicional
+    const token = jwt.sign(
+      { 
+        id: user._id, 
+        email: user.email, 
+        role: user.role 
+      }, 
+      process.env.JWT_SECRET,
+      { expiresIn: '1h' }  // Token expira en 1 hora
+    );
 
-    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET);
-    res.json({ token, role: user.role });
+    // Respuesta con token y rol
+    res.json({ 
+      token, 
+      role: user.role,
+      email: user.email
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -118,11 +125,59 @@ const createTemporaryUser = async (req, res) => {
 // Obtener todos los usuarios
 const getAllUsers = async (req, res) => {
   try {
+    // Obtener todos los usuarios sin filtrar por expiración
     const users = await User.find()
       .select('-password')
       .populate('createdBy', 'email');
-    res.json(users);
+    
+    // Procesar cada usuario para actualizar su estado
+    const processedUsers = await Promise.all(users.map(async (user) => {
+      const userObj = user.toObject();
+
+      // Manejar usuarios temporales
+      if (user.role === ROLES.TEMPORAL && user.expiresAt) {
+        const now = new Date();
+        const expirationDate = new Date(user.expiresAt);
+        
+        // Si está expirado, actualizar su estado en la base de datos
+        if (now > expirationDate && user.isActive) {
+          user.isActive = false;
+          await user.save();
+          userObj.isActive = false;
+        }
+
+        // Agregar información adicional útil
+        userObj.expirationInfo = {
+          expired: now > expirationDate,
+          expirationDate: expirationDate,
+          minutesRemaining: Math.max(
+            0,
+            Math.ceil((expirationDate - now) / (1000 * 60))
+          )
+        };
+      }
+
+      return userObj;
+    }));
+
+    // Ordenar usuarios: activos primero, luego por rol
+    const sortedUsers = processedUsers.sort((a, b) => {
+      if (a.isActive && !b.isActive) return -1;
+      if (!a.isActive && b.isActive) return 1;
+      
+      const rolePriority = {
+        [ROLES.ADMIN]: 4,
+        [ROLES.SUPERVISOR]: 3,
+        [ROLES.BASIC]: 2,
+        [ROLES.TEMPORAL]: 1
+      };
+      
+      return (rolePriority[b.role] || 0) - (rolePriority[a.role] || 0);
+    });
+
+    res.json(sortedUsers);
   } catch (error) {
+    console.error('Error en getAllUsers:', error);
     res.status(500).json({ error: error.message });
   }
 };
@@ -220,21 +275,81 @@ const getCurrentUser = async (req, res) => {
 const toggleUserStatus = async (req, res) => {
   try {
     const { id, action } = req.params;
-    const isActive = action === 'activate';
+    const isActivating = action === 'activate';
 
-    const updatedUser = await User.findByIdAndUpdate(
-      id,
-      { isActive },
-      { new: true }
-    ).select('-password');
-
-    if (!updatedUser) {
+    const user = await User.findById(id);
+    
+    if (!user) {
       return res.status(404).json({ msg: 'Usuario no encontrado' });
     }
 
+    // Si estamos activando un usuario temporal
+    if (isActivating && user.role === ROLES.TEMPORAL) {
+      // Establecer nueva fecha de expiración
+      const newExpirationDate = new Date();
+      newExpirationDate.setMinutes(newExpirationDate.getMinutes() + 30);
+      
+      user.expiresAt = newExpirationDate;
+    }
+
+    user.isActive = isActivating;
+    await user.save();
+
+    // Obtener el usuario actualizado con sus relaciones
+    const updatedUser = await User.findById(id)
+      .select('-password')
+      .populate('createdBy', 'email');
+
     res.json(updatedUser);
   } catch (error) {
+    console.error('Error en toggleUserStatus:', error);
     res.status(500).json({ error: error.message });
+  }
+};
+
+const reactivateTemporaryUser = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const user = await User.findById(userId);
+
+    if (!user) {
+      return res.status(404).json({ msg: 'Usuario no encontrado' });
+    }
+
+    // Verificar que sea un usuario temporal
+    if (user.role !== ROLES.TEMPORAL) {
+      return res.status(403).json({ msg: 'Solo usuarios temporales pueden ser reactivados' });
+    }
+
+    // Verificar si ya está desactivado
+    if (!user.isActive) {
+      // Restablecer la fecha de expiración por 30 minutos
+      const newExpirationDate = new Date();
+      newExpirationDate.setMinutes(newExpirationDate.getMinutes() + 30);
+
+      // Actualizar usuario
+      user.isActive = true;
+      user.expiresAt = newExpirationDate;
+
+      await user.save();
+
+      return res.json({ 
+        msg: 'Usuario temporal reactivado', 
+        expiresAt: newExpirationDate 
+      });
+    }
+
+    // Si ya está activo, retornar mensaje
+    res.json({ 
+      msg: 'El usuario ya está activo', 
+      expiresAt: user.expiresAt 
+    });
+
+  } catch (error) {
+    res.status(500).json({ 
+      msg: 'Error al reactivar usuario temporal', 
+      error: error.message 
+    });
   }
 };
 
@@ -248,5 +363,6 @@ module.exports = {
   updateUser,
   deleteUser,
   getCurrentUser,
-  toggleUserStatus
+  toggleUserStatus,
+  reactivateTemporaryUser
 };
