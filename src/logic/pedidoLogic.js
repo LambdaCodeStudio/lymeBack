@@ -1,6 +1,7 @@
 const Pedido = require('../models/pedidoSchema');
 
 const obtenerPedidos = async () => {
+
     return await Pedido.find().populate('userId', 'nombre email').populate('productos.productoId');
 };
 

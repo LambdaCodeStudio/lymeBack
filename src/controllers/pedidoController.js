@@ -3,9 +3,11 @@ const pedidoLogic = require('../logic/pedidoLogic');
 exports.getPedidos = async (req, res) => {
     try {
         const pedidos = await pedidoLogic.obtenerPedidos();
+        console.log('Pedidos obtenidos:', pedidos); // Verifica qué devuelve realmente
         res.json(pedidos);
     } catch (error) {
-        res.status(500).json({ mensaje: 'Error al obtener pedidos', error });
+        console.error('Error al obtener pedidos:', error);
+        res.status(500).json({ mensaje: 'Error al obtener pedidos', error: error.message });
     }
 };
 
@@ -14,7 +16,7 @@ exports.getPedidoById = async (req, res) => {
         const pedido = await pedidoLogic.obtenerPedidoPorId(req.params.id);
         res.json(pedido);
     } catch (error) {
-        res.status(500).json({ mensaje: 'Error al obtener el pedido', error });
+        res.status(500).json({ mensaje: 'Error al obtener el pedido ', error });
     }
 };
 

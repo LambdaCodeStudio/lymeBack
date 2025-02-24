@@ -30,3 +30,5 @@ const pedidoSchema = new mongoose.Schema({
         }
     ]
 });    
+
+module.exports = mongoose.model('Pedido', pedidoSchema);
