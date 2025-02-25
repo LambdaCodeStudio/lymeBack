@@ -28,7 +28,11 @@ const pedidoSchema = new mongoose.Schema({
                 required: true
             }
         }
-    ]
+    ],
+    detalle:{
+        type: String,
+        default: ' '
+    }
 });    
 
 module.exports = mongoose.model('Pedido', pedidoSchema);

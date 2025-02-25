@@ -30,6 +30,10 @@ const auth = async (req, res, next) => {
     req.user = {
       id: user._id,
       email: user.email,
+      usuario: user.usuario,
+      celular: user.celular,
+      nombre: user.nombre,
+      apellido: user.apellido,
       role: user.role,
       isActive: user.isActive,
       expiresAt: user.expiresAt
