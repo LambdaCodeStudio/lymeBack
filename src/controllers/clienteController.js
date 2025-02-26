@@ -1,4 +1,5 @@
-const Cliente = require('../models/Cliente');
+// Corrige esta línea para que coincida con el nombre real de tu archivo
+const Cliente = require('../models/clienteSchema'); 
 
 // Obtener todos los clientes
 exports.getClientes = async (req, res) => {
