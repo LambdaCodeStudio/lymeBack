@@ -9,18 +9,11 @@ const clienteSchema = new mongoose.Schema({
         type: String,
         default: ' ' 
     },
-    userId: {
+    userId:{
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'User',    // Asegúrate de que tenga esta referencia
-        required: true
+        ref: 'User'
     },
-    createdBy: {        // Nuevo campo para el creador
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'User',
-        required: true
-    }
-}, { 
-    timestamps: true    // Agrega createdAt y updatedAt
+
 });
 
 module.exports = mongoose.model('Cliente', clienteSchema);

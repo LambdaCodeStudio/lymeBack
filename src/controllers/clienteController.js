@@ -1,11 +1,10 @@
 const Cliente = require('../models/Cliente');
 
-// Obtener todos los clientes con información de usuario y creador
+// Obtener todos los clientes
 exports.getClientes = async (req, res) => {
     try {
         const clientes = await Cliente.find()
-            .populate('userId', 'email usuario nombre apellido') // Datos del usuario asignado
-            .populate('createdBy', 'email usuario nombre apellido') // Datos del creador
+            .populate('userId', 'email usuario nombre apellido') // Población de datos del usuario
             .exec();
         
         res.json(clientes);
@@ -19,7 +18,6 @@ exports.getClienteById = async (req, res) => {
     try {
         const cliente = await Cliente.findById(req.params.id)
             .populate('userId', 'email usuario nombre apellido')
-            .populate('createdBy', 'email usuario nombre apellido')
             .exec();
         
         if (!cliente) {
@@ -37,7 +35,6 @@ exports.getClientesByUserId = async (req, res) => {
     try {
         const clientes = await Cliente.find({ userId: req.params.userId })
             .populate('userId', 'email usuario nombre apellido')
-            .populate('createdBy', 'email usuario nombre apellido')
             .exec();
         
         res.json(clientes);
@@ -54,16 +51,14 @@ exports.createCliente = async (req, res) => {
         const cliente = new Cliente({
             servicio,
             seccionDelServicio,
-            userId,             // Usuario asignado al cliente
-            createdBy: req.user.id  // Usuario que crea el cliente (del middleware auth)
+            userId
         });
         
         await cliente.save();
         
-        // Devolver el cliente con información poblada
+        // Devolver el cliente con información de usuario poblada
         const clienteCreado = await Cliente.findById(cliente._id)
             .populate('userId', 'email usuario nombre apellido')
-            .populate('createdBy', 'email usuario nombre apellido')
             .exec();
         
         res.status(201).json(clienteCreado);
@@ -79,16 +74,10 @@ exports.updateCliente = async (req, res) => {
         
         const clienteActualizado = await Cliente.findByIdAndUpdate(
             req.params.id,
-            { 
-                servicio, 
-                seccionDelServicio, 
-                userId
-                // No actualizamos createdBy ya que eso no debe cambiar
-            },
+            { servicio, seccionDelServicio, userId },
             { new: true }
         )
         .populate('userId', 'email usuario nombre apellido')
-        .populate('createdBy', 'email usuario nombre apellido')
         .exec();
         
         if (!clienteActualizado) {
