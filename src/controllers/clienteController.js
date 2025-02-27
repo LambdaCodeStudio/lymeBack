@@ -94,9 +94,9 @@ exports.updateCliente = async (req, res) => {
 // Eliminar cliente
 exports.deleteCliente = async (req, res) => {
     try {
-        const clienteEliminado = await Cliente.findByIdAndRemove(req.params.id);
+        const resultado = await Cliente.deleteOne({ _id: req.params.id });
         
-        if (!clienteEliminado) {
+        if (resultado.deletedCount === 0) {
             return res.status(404).json({ mensaje: 'Cliente no encontrado' });
         }
         
