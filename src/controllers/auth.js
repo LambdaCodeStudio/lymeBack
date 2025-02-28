@@ -256,9 +256,27 @@ const deleteUser = async (req, res) => {
       return res.status(403).json({ msg: 'No se puede eliminar al administrador principal' });
     }
 
+    // Primero buscamos todos los clientes asociados a este usuario
+    const Cliente = require('../models/clienteSchema');
+    const clientesAsociados = await Cliente.find({ userId: req.params.id });
+    
+    console.log(`Se encontraron ${clientesAsociados.length} clientes asociados al usuario ${req.params.id}`);
+    
+    // Eliminamos los clientes asociados
+    if (clientesAsociados.length > 0) {
+      await Cliente.deleteMany({ userId: req.params.id });
+      console.log(`Se eliminaron ${clientesAsociados.length} clientes asociados al usuario ${req.params.id}`);
+    }
+
+    // Finalmente eliminamos el usuario
     await User.deleteOne({ _id: req.params.id });
-    res.json({ msg: 'Usuario eliminado correctamente' });
+    
+    res.json({ 
+      msg: 'Usuario eliminado correctamente', 
+      clientesEliminados: clientesAsociados.length 
+    });
   } catch (error) {
+    console.error('Error al eliminar usuario:', error);
     res.status(500).json({ error: error.message });
   }
 };
