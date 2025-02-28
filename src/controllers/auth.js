@@ -262,10 +262,15 @@ const deleteUser = async (req, res) => {
     
     console.log(`Se encontraron ${clientesAsociados.length} clientes asociados al usuario ${req.params.id}`);
     
-    // Eliminamos los clientes asociados
+    // En lugar de eliminar los clientes, los dejamos sin userId para que puedan ser reasignados
+    let clientesActualizados = 0;
     if (clientesAsociados.length > 0) {
-      await Cliente.deleteMany({ userId: req.params.id });
-      console.log(`Se eliminaron ${clientesAsociados.length} clientes asociados al usuario ${req.params.id}`);
+      const resultado = await Cliente.updateMany(
+        { userId: req.params.id },
+        { $unset: { userId: "" } }
+      );
+      clientesActualizados = resultado.modifiedCount;
+      console.log(`Se actualizaron ${clientesActualizados} clientes para reasignación futura`);
     }
 
     // Finalmente eliminamos el usuario
@@ -273,7 +278,7 @@ const deleteUser = async (req, res) => {
     
     res.json({ 
       msg: 'Usuario eliminado correctamente', 
-      clientesEliminados: clientesAsociados.length 
+      clientesEnStandBy: clientesActualizados 
     });
   } catch (error) {
     console.error('Error al eliminar usuario:', error);
