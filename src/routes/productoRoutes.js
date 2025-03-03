@@ -10,5 +10,8 @@ router.put('/:id', productoController.actualizarProducto);
 router.delete('/:id', productoController.eliminarProducto);
 router.post('/:id/vender', productoController.venderProducto);
 router.post('/:id/cancelar-venta', productoController.cancelarVenta);
-
+router.post('/:id/imagen', upload.single('imagen'), productoController.uploadImagen);
+router.get('/:id/imagen', productoController.getImagen);
+router.delete('/:id/imagen', productoController.deleteImagen);
 module.exports = router;
+

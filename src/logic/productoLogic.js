@@ -44,6 +44,62 @@ async function cancelarVenta(id) {
     return await producto.save();
 }
 
+// Método para agregar o actualizar la imagen de un producto
+async function updateImagen(productoId, imageBuffer) {
+    try {
+      const producto = await Producto.findById(productoId);
+      
+      if (!producto) {
+        throw new Error('Producto no encontrado');
+      }
+      
+      producto.imagen = imageBuffer;
+      await producto.save();
+      
+      return { success: true, message: 'Imagen actualizada correctamente' };
+    } catch (error) {
+      throw error;
+    }
+  }
+  
+  // Método para obtener la imagen de un producto
+async function getImagen(productoId) {
+    try {
+      const producto = await Producto.findById(productoId).select('imagen');
+      
+      if (!producto) {
+        throw new Error('Producto no encontrado');
+      }
+      
+      if (!producto.imagen) {
+        throw new Error('El producto no tiene una imagen');
+      }
+      
+      return producto.imagen;
+    } catch (error) {
+      throw error;
+    }
+  }
+  
+  // Método para eliminar la imagen de un producto
+async function deleteImagen(productoId) {
+    try {
+      const producto = await Producto.findById(productoId);
+      
+      if (!producto) {
+        throw new Error('Producto no encontrado');
+      }
+      
+      producto.imagen = undefined;
+      await producto.save();
+      
+      return { success: true, message: 'Imagen eliminada correctamente' };
+    } catch (error) {
+      throw error;
+    }
+  }
+
+
 module.exports = {
     obtenerTodos,
     obtenerPorId,
@@ -51,5 +107,8 @@ module.exports = {
     actualizarProducto,
     eliminarProducto,
     venderProducto,
-    cancelarVenta
+    cancelarVenta,
+    updateImagen,
+    deleteImagen,
+    getImagen
 };

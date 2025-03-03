@@ -129,6 +129,62 @@ async function cancelarVenta(req, res) {
     }
 }
 
+
+async function uploadImagen(req, res) {
+    try {
+      const { id } = req.params;
+      
+      if (!req.file) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'No se ha proporcionado ninguna imagen' 
+        });
+      }
+      
+      const resultado = await productoLogic.updateImagen(id, req.file.buffer);
+      
+      return res.status(200).json(resultado);
+    } catch (error) {
+      return res.status(500).json({ 
+        success: false, 
+        message: error.message 
+      });
+    }
+  }
+  
+  // Controlador para obtener una imagen
+async function getImagen(req, res) {
+    try {
+      const { id } = req.params;
+      
+      const imagen = await productologic.getImagen(id);
+      
+      // Configurar los headers para la imagen
+      res.set('Content-Type', 'image/jpeg'); // Ajustar según el tipo de imagen
+      return res.send(imagen);
+    } catch (error) {
+      return res.status(404).json({ 
+        success: false, 
+        message: error.message 
+      });
+    }
+  }
+  
+  // Controlador para eliminar una imagen
+async function deleteImagen(req, res) {
+    try {
+      const { id } = req.params;
+      
+      const resultado = await productologic.deleteImagen(id);
+      
+      return res.status(200).json(resultado);
+    } catch (error) {
+      return res.status(500).json({ 
+        success: false, 
+        message: error.message 
+      });
+    }
+  }
 module.exports = {
     obtenerTodos,
     obtenerPorId,
@@ -136,5 +192,8 @@ module.exports = {
     actualizarProducto,
     eliminarProducto,
     venderProducto,
-    cancelarVenta
+    cancelarVenta,
+    uploadImagen,
+    getImagen, 
+    deleteImagen
 };
