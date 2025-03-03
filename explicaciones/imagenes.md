@@ -17,3 +17,5 @@ Eliminar una imagen
 
 Método: DELETE
 URL: /api/productos/:id/imagen
+
+MIRA LA IMAGEN QUE ESTA EN ESTA CARPETA, ES LO DE LOS PARAMETROS PARA PEDIR LAS FOTOS

@@ -141,7 +141,7 @@ async function uploadImagen(req, res) {
         });
       }
       
-      const resultado = await productoLogic.updateImagen(id, req.file.buffer);
+      const resultado = await productoService.updateImagen(id, req.file.buffer);
       
       return res.status(200).json(resultado);
     } catch (error) {
@@ -153,15 +153,40 @@ async function uploadImagen(req, res) {
   }
   
   // Controlador para obtener una imagen
-async function getImagen(req, res) {
+  async function getImagen(req, res) {
     try {
       const { id } = req.params;
+      const { quality = 80, width, height } = req.query; // Parámetros opcionales
       
-      const imagen = await productologic.getImagen(id);
+      // Validar que la calidad esté entre 1 y 100
+      const webpQuality = Math.max(1, Math.min(100, parseInt(quality) || 80));
       
-      // Configurar los headers para la imagen
-      res.set('Content-Type', 'image/jpeg'); // Ajustar según el tipo de imagen
-      return res.send(imagen);
+      const imagen = await productoService.getImagen(id);
+      
+      // Usar sharp para convertir la imagen a formato WebP
+      const sharp = require('sharp');
+      let sharpInstance = sharp(imagen);
+      
+      // Redimensionar si se especifican width o height
+      if (width || height) {
+        sharpInstance = sharpInstance.resize({
+          width: width ? parseInt(width) : null,
+          height: height ? parseInt(height) : null,
+          fit: 'inside', // Mantiene la relación de aspecto
+          withoutEnlargement: true // No aumenta el tamaño si la imagen es más pequeña
+        });
+      }
+      
+      // Convertir a WebP con la calidad especificada
+      const webpImage = await sharpInstance
+        .webp({ quality: webpQuality })
+        .toBuffer();
+      
+      // Configurar los headers para la imagen WebP
+      res.set('Content-Type', 'image/webp');
+      // Agregar cache-control para mejor rendimiento
+      res.set('Cache-Control', 'public, max-age=31536000'); // 1 año
+      return res.send(webpImage);
     } catch (error) {
       return res.status(404).json({ 
         success: false, 
@@ -171,11 +196,11 @@ async function getImagen(req, res) {
   }
   
   // Controlador para eliminar una imagen
-async function deleteImagen(req, res) {
+  async function deleteImagen(req, res) {
     try {
       const { id } = req.params;
       
-      const resultado = await productologic.deleteImagen(id);
+      const resultado = await productoService.deleteImagen(id);
       
       return res.status(200).json(resultado);
     } catch (error) {

@@ -2,6 +2,7 @@
 const express = require('express');
 const productoController = require('../controllers/productoController');
 const router = express.Router();
+const upload = require('../middleware/upload');
 
 router.get('/', productoController.obtenerTodos);
 router.get('/:id', productoController.obtenerPorId);
