@@ -141,10 +141,12 @@ async function uploadImagen(req, res) {
         });
       }
       
-      const resultado = await productoService.updateImagen(id, req.file.buffer);
+      // La corrección clave está aquí: usar productoLogic en lugar de productoService
+      const resultado = await productoLogic.updateImagen(id, req.file.buffer);
       
       return res.status(200).json(resultado);
     } catch (error) {
+      console.error('Error al subir imagen del producto:', error);
       return res.status(500).json({ 
         success: false, 
         message: error.message 
@@ -161,34 +163,48 @@ async function uploadImagen(req, res) {
       // Validar que la calidad esté entre 1 y 100
       const webpQuality = Math.max(1, Math.min(100, parseInt(quality) || 80));
       
-      const imagen = await productoService.getImagen(id);
-      
-      // Usar sharp para convertir la imagen a formato WebP
-      const sharp = require('sharp');
-      let sharpInstance = sharp(imagen);
-      
-      // Redimensionar si se especifican width o height
-      if (width || height) {
-        sharpInstance = sharpInstance.resize({
-          width: width ? parseInt(width) : null,
-          height: height ? parseInt(height) : null,
-          fit: 'inside', // Mantiene la relación de aspecto
-          withoutEnlargement: true // No aumenta el tamaño si la imagen es más pequeña
-        });
+      try {
+        // Intentar obtener la imagen, capturando específicamente el error de "no tiene imagen"
+        const imagen = await productoLogic.getImagen(id);
+        
+        // Usar sharp para convertir la imagen a formato WebP
+        const sharp = require('sharp');
+        let sharpInstance = sharp(imagen);
+        
+        // Redimensionar si se especifican width o height
+        if (width || height) {
+          sharpInstance = sharpInstance.resize({
+            width: width ? parseInt(width) : null,
+            height: height ? parseInt(height) : null,
+            fit: 'inside', // Mantiene la relación de aspecto
+            withoutEnlargement: true // No aumenta el tamaño si la imagen es más pequeña
+          });
+        }
+        
+        // Convertir a WebP con la calidad especificada
+        const webpImage = await sharpInstance
+          .webp({ quality: webpQuality })
+          .toBuffer();
+        
+        // Configurar los headers para la imagen WebP
+        res.set('Content-Type', 'image/webp');
+        // Agregar cache-control para mejor rendimiento
+        res.set('Cache-Control', 'public, max-age=31536000'); // 1 año
+        return res.send(webpImage);
+        
+      } catch (error) {
+        // Si el error es específicamente que el producto no tiene imagen, 
+        // devolvemos un estado 204 (No Content) en lugar de un error
+        if (error.message === 'El producto no tiene una imagen') {
+          return res.status(204).end();
+        }
+        
+        // Para otros errores, seguimos lanzando la excepción
+        throw error;
       }
-      
-      // Convertir a WebP con la calidad especificada
-      const webpImage = await sharpInstance
-        .webp({ quality: webpQuality })
-        .toBuffer();
-      
-      // Configurar los headers para la imagen WebP
-      res.set('Content-Type', 'image/webp');
-      // Agregar cache-control para mejor rendimiento
-      res.set('Cache-Control', 'public, max-age=31536000'); // 1 año
-      return res.send(webpImage);
     } catch (error) {
-      return res.status(404).json({ 
+      console.error('Error al obtener imagen del producto:', error);
+      return res.status(error.message === 'Producto no encontrado' ? 404 : 500).json({ 
         success: false, 
         message: error.message 
       });
@@ -200,16 +216,19 @@ async function uploadImagen(req, res) {
     try {
       const { id } = req.params;
       
-      const resultado = await productoService.deleteImagen(id);
+      // Usar productoLogic en lugar de productoService
+      const resultado = await productoLogic.deleteImagen(id);
       
       return res.status(200).json(resultado);
     } catch (error) {
+      console.error('Error al eliminar imagen del producto:', error);
       return res.status(500).json({ 
         success: false, 
         message: error.message 
       });
     }
   }
+
 module.exports = {
     obtenerTodos,
     obtenerPorId,
