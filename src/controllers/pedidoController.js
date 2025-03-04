@@ -3,7 +3,6 @@ const pedidoLogic = require('../logic/pedidoLogic');
 exports.getPedidos = async (req, res) => {
     try {
         const pedidos = await pedidoLogic.obtenerPedidos();
-        console.log('Pedidos obtenidos:', pedidos); // Verifica qué devuelve realmente
         res.json(pedidos);
     } catch (error) {
         console.error('Error al obtener pedidos:', error);
@@ -53,7 +52,7 @@ exports.createPedido = async (req, res) => {
         const pedido = await pedidoLogic.crearPedido(req.body);
         res.status(201).json(pedido);
     } catch (error) {
-        res.status(500).json({ mensaje: 'Error al crear pedido', error });
+        res.status(500).json({ mensaje: 'Error al crear pedido, verifique el stock de los productos, previo a hacer la compra.', error });
     }
 };
 
