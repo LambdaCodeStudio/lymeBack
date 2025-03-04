@@ -12,6 +12,7 @@ LymeBack es el backend de la aplicación Lyme, un sistema de gestión para servi
 - **Mongoose**: ODM para MongoDB
 - **JWT**: Autenticación basada en tokens
 - **bcrypt.js**: Encriptación de contraseñas
+- **ExcelJS**: Generación de reportes en Excel
 
 ## Características de seguridad
 
@@ -86,6 +87,7 @@ lymeBack/
 │   ├── middleware/       # Middleware personalizado
 │   ├── models/           # Modelos de Mongoose
 │   ├── routes/           # Definición de rutas
+│   ├── services/         # Servicios de negocio
 │   ├── utils/            # Utilidades
 │   └── index.js          # Punto de entrada
 ├── .env                  # Variables de entorno
@@ -111,13 +113,14 @@ lymeBack/
 }
 ```
 
-### Cliente (`clienteSchema.js`)
+### Cliente (`cliente.js`)
 
 ```javascript
 {
   servicio: String,       // Nombre del servicio (entidad padre)
   seccionDelServicio: String,  // Sección específica dentro del servicio
-  userId: ObjectId        // Usuario asignado a este cliente
+  userId: ObjectId,       // Usuario asignado a este cliente
+  activo: Boolean         // Estado del cliente
 }
 ```
 
@@ -126,32 +129,53 @@ lymeBack/
 ```javascript
 {
   nombre: String,
-  categoria: String,
-  stock: Number,
-  unidad: String,
-  precioUnitario: Number,
   descripcion: String,
-  imgUrl: String,
-  lastUpdated: Date
+  categoria: String,      // limpieza, mantenimiento
+  subCategoria: String,   // aerosoles, liquidos, etc.
+  precio: Number,
+  stock: Number,
+  proovedorInfo: String,
+  imagen: String,         // Base64 de la imagen
+  vendidos: Number,       // Cantidad vendida
+  createdAt: Date,
+  updatedAt: Date
 }
 ```
 
-### Orden (`orden.js`)
+### Pedido (`pedido.js`)
 
 ```javascript
 {
-  cliente: ObjectId,      // Referencia al cliente
+  userId: ObjectId,        // Usuario que realizó el pedido
+  servicio: String,        // Servicio asociado
+  seccionDelServicio: String,  // Sección específica
+  detalle: String,         // Detalles adicionales
+  fecha: Date,             // Fecha de creación
   productos: [{
-    producto: ObjectId,   // Referencia al producto
-    cantidad: Number
+    productoId: ObjectId,  // Referencia al producto
+    cantidad: Number,
+    nombre: String,
+    precio: Number
   }],
-  estado: String,         // pendiente, en progreso, completada, cancelada
-  fechaCreacion: Date,
-  fechaEntrega: Date,
-  usuarioAsignado: ObjectId,
-  notas: String
+  estado: String,          // pendiente, aprobado, rechazado, entregado
+  totalPedido: Number      // Monto total
 }
 ```
+
+## Mejoras recientes
+
+### API y rendimiento
+- **Optimización de endpoints**: Respuestas más rápidas y eficientes
+- **Manejo de errores**: Sistema mejorado para capturar y responder errores
+
+### Productos e inventario
+- **Imágenes en productos**: Soporte para almacenar imágenes en base64
+- **Subcategorías**: Sistema jerarquizado de categorías y subcategorías
+- **Validación de stock**: Comprobación automática en operaciones de pedido
+
+### Pedidos y reportes
+- **Descargas en Excel**: Generación de reportes detallados
+- **Filtrado avanzado**: Opciones de filtrado por múltiples criterios
 
 ## API Endpoints
 
@@ -159,43 +183,33 @@ lymeBack/
 
 - **POST /api/auth/login**: Iniciar sesión
 - **POST /api/auth/register**: Registrar usuario (requiere autenticación)
-- **POST /api/auth/temporary**: Crear usuario temporal (requiere autenticación)
 - **GET /api/auth/me**: Obtener información del usuario actual
-
-### Usuarios
-
-- **GET /api/auth/users**: Obtener todos los usuarios
-- **GET /api/auth/users/:id**: Obtener usuario por ID
-- **PUT /api/auth/users/:id**: Actualizar usuario
-- **DELETE /api/auth/users/:id**: Eliminar usuario
-- **PUT /api/auth/users/:id/activate**: Activar usuario
-- **PUT /api/auth/users/:id/deactivate**: Desactivar usuario
+- **GET /api/auth/users**: Obtener todos los usuarios (admin, supervisor)
 
 ### Clientes
 
-- **GET /api/cliente**: Obtener todos los clientes
-- **GET /api/cliente/sin-asignar**: Obtener clientes sin asignar
+- **GET /api/cliente**: Obtener clientes según permisos
 - **GET /api/cliente/:id**: Obtener cliente por ID
-- **GET /api/cliente/user/:userId**: Obtener clientes por ID de usuario
 - **POST /api/cliente**: Crear cliente
 - **PUT /api/cliente/:id**: Actualizar cliente
 - **DELETE /api/cliente/:id**: Eliminar cliente
 
-### Inventario
+### Productos
 
-- **GET /api/inventario**: Obtener todos los productos
-- **GET /api/inventario/:id**: Obtener producto por ID
-- **POST /api/inventario**: Crear producto
-- **PUT /api/inventario/:id**: Actualizar producto
-- **DELETE /api/inventario/:id**: Eliminar producto
+- **GET /api/producto**: Obtener todos los productos
+- **GET /api/producto/:id**: Obtener producto por ID
+- **POST /api/producto**: Crear producto
+- **PUT /api/producto/:id**: Actualizar producto
+- **DELETE /api/producto/:id**: Eliminar producto
 
-### Órdenes
+### Pedidos
 
-- **GET /api/orden**: Obtener todas las órdenes
-- **GET /api/orden/:id**: Obtener orden por ID
-- **POST /api/orden**: Crear orden
-- **PUT /api/orden/:id**: Actualizar orden
-- **DELETE /api/orden/:id**: Eliminar orden
+- **GET /api/pedido**: Obtener pedidos según permisos
+- **GET /api/pedido/:id**: Obtener pedido por ID
+- **POST /api/pedido**: Crear pedido
+- **PUT /api/pedido/:id**: Actualizar pedido
+- **DELETE /api/pedido/:id**: Eliminar pedido
+- **GET /api/pedido/excel**: Generar reporte Excel de pedidos
 
 ## Sistema de roles
 
@@ -213,7 +227,7 @@ El sistema utiliza cuatro roles de usuario, cada uno con diferentes niveles de a
 
 3. **Básico**:
    - Acceso solo a sus clientes asignados
-   - Puede crear usuarios temporales
+   - Puede ver y ordenar productos
    - Gestión limitada de inventario y órdenes
 
 4. **Temporal**:
@@ -223,45 +237,55 @@ El sistema utiliza cuatro roles de usuario, cada uno con diferentes niveles de a
 
 ## Características especiales
 
-### Usuarios temporales
+### Gestión de inventario
 
-Los usuarios temporales están diseñados para accesos puntuales al sistema:
+El sistema incluye características avanzadas para la gestión de inventario:
 
-- Se crean con una fecha de expiración (por defecto: 30 minutos)
-- Al expirar, se desactivan automáticamente
-- Cuando se reactivan, se renueva su tiempo de expiración
+- **Alertas de stock bajo**: El sistema identifica automáticamente productos con stock bajo
+- **Historial de movimientos**: Cada modificación de stock queda registrada
+- **Imágenes de producto**: Permite asociar imágenes a los productos
+- **Categorización avanzada**: Organización por categorías y subcategorías
 
-### Gestión de clientes sin usuario
+### Pedidos y reportes
 
-Cuando un usuario es eliminado o desactivado:
+El módulo de pedidos incluye:
 
-1. Sus clientes quedan en estado "pendiente de reasignación"
-2. El endpoint `/api/cliente/sin-asignar` permite encontrarlos
-3. Estos clientes son marcados con una propiedad `requiereAsignacion`
-4. Un administrador puede asignarlos a otros usuarios
-
-## Middlewares importantes
-
-- **auth.js**: Verifica la autenticación JWT y los permisos de usuario
-- **errorHandler.js**: Manejo centralizado de errores
-- **validator.js**: Validación de datos de entrada
+- **Validación automática**: Comprueba disponibilidad de stock
+- **Reportes Excel**: Generación de reportes detallados y configurables
+- **Filtrado avanzado**: Por cliente, fechas, usuario, estado, etc.
+- **Notificaciones**: Aviso automático de pedidos nuevos a administradores
 
 ## Seguridad
 
-### Contraseñas
+### Autenticación y autorización
 
-- Encriptadas con bcrypt (10 rondas de salt)
-- Validación de fuerza de contraseña
+- **JWT**: Tokens firmados con expiración configurable
+- **Middleware de autenticación**: Verifica tokens en cada petición
+- **Middleware de autorización**: Comprueba permisos según rol
+- **Protección de rutas**: Acceso restringido según rol
 
-### JWT
+### Protección de datos
 
-- Tokens firmados con un secreto único
-- Expiración configurable (por defecto: 24 horas)
+- **Sanitización**: Limpieza de datos de entrada para prevenir inyecciones
+- **Validación**: Comprobación de formato y tipo de datos
+- **Encriptación**: Contraseñas encriptadas con bcrypt
+- **Logs de seguridad**: Registro de intentos fallidos de autenticación
 
-### Protección de rutas
+## Pruebas y desarrollo
 
-- Verificación de token en cada petición protegida
-- Verificación de roles para accesos específicos
+### Entorno de desarrollo
+
+- **Nodemon**: Reinicio automático en desarrollo
+- **dotenv**: Carga de variables de entorno
+- **ESLint**: Linting para código consistente
+
+### Endpoints de prueba
+
+Para facilitar el desarrollo, se incluyen algunos endpoints útiles:
+
+- **GET /api/test/health**: Comprobar estado del servidor
+- **GET /api/test/db**: Comprobar conexión a base de datos
+- **POST /api/test/createAdmin**: Crear usuario administrador inicial
 
 ## Contribución
 
