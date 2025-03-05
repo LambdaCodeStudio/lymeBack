@@ -1,4 +1,4 @@
-const Pedido = require('../models/pedidoSchema');
+const { Pedido } = require('../models/pedidoSchema');
 const productoLogic = require('../logic/productoLogic'); // Importamos la lógica de productos
 
 const obtenerPedidos = async () => {
