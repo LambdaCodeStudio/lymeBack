@@ -82,3 +82,16 @@ exports.getPedidosOrdenados = async (req, res) => {
         res.status(500).json({ mensaje: 'Error al obtener pedidos ordenados', error });
     }
 };
+
+exports.getPedidosByClienteId = async (req, res) => {
+    try {
+        const pedidos = await pedidoLogic.obtenerPedidosPorClienteId(req.params.clienteId);
+        res.json(pedidos);
+    } catch (error) {
+        console.error('Error al obtener pedidos por clienteId:', error);
+        res.status(500).json({ 
+            mensaje: 'Error al obtener pedidos por cliente', 
+            error: error.message 
+        });
+    }
+};

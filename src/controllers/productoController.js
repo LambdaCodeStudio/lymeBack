@@ -129,7 +129,6 @@ async function cancelarVenta(req, res) {
     }
 }
 
-
 async function uploadImagen(req, res) {
     try {
       const { id } = req.params;
@@ -151,10 +150,35 @@ async function uploadImagen(req, res) {
         message: error.message 
       });
     }
-  }
+}
+
+// Nuevo controlador para subir imagen en formato base64
+async function uploadImagenBase64(req, res) {
+    try {
+      const { id } = req.params;
+      const { base64Image } = req.body;
+      
+      if (!base64Image) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'No se ha proporcionado ninguna imagen en formato base64' 
+        });
+      }
+      
+      const resultado = await productoLogic.updateImagenBase64(id, base64Image);
+      
+      return res.status(200).json(resultado);
+    } catch (error) {
+      console.error('Error al subir imagen base64 del producto:', error);
+      return res.status(500).json({ 
+        success: false, 
+        message: error.message 
+      });
+    }
+}
   
-  // Controlador para obtener una imagen
-  async function getImagen(req, res) {
+// Controlador para obtener una imagen
+async function getImagen(req, res) {
     try {
       const { id } = req.params;
       const { quality = 80, width, height } = req.query; // Parámetros opcionales
@@ -208,14 +232,50 @@ async function uploadImagen(req, res) {
         message: error.message 
       });
     }
-  }
-  
-  // Controlador para eliminar una imagen
-  async function deleteImagen(req, res) {
+}
+
+// Nuevo controlador para obtener imagen en formato base64
+async function getImagenBase64(req, res) {
     try {
       const { id } = req.params;
       
-      // Usar productoLogic en lugar de productoService
+      try {
+        // Intentar obtener la imagen en formato base64
+        const base64Image = await productoLogic.getImagenBase64(id);
+        
+        // Devolver la imagen en formato JSON con el base64
+        return res.status(200).json({ 
+          success: true, 
+          image: base64Image 
+        });
+        
+      } catch (error) {
+        // Si el error es específicamente que el producto no tiene imagen, 
+        // devolvemos un estado 204 (No Content) en lugar de un error
+        if (error.message === 'El producto no tiene una imagen') {
+          return res.status(204).json({ 
+            success: false, 
+            message: 'El producto no tiene una imagen' 
+          });
+        }
+        
+        // Para otros errores, seguimos lanzando la excepción
+        throw error;
+      }
+    } catch (error) {
+      console.error('Error al obtener imagen base64 del producto:', error);
+      return res.status(error.message === 'Producto no encontrado' ? 404 : 500).json({ 
+        success: false, 
+        message: error.message 
+      });
+    }
+}
+  
+// Controlador para eliminar una imagen
+async function deleteImagen(req, res) {
+    try {
+      const { id } = req.params;
+      
       const resultado = await productoLogic.deleteImagen(id);
       
       return res.status(200).json(resultado);
@@ -226,7 +286,7 @@ async function uploadImagen(req, res) {
         message: error.message 
       });
     }
-  }
+}
 
 module.exports = {
     obtenerTodos,
@@ -238,5 +298,8 @@ module.exports = {
     cancelarVenta,
     uploadImagen,
     getImagen, 
-    deleteImagen
+    deleteImagen,
+    // Nuevos controladores para base64
+    uploadImagenBase64,
+    getImagenBase64
 };

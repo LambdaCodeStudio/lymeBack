@@ -6,8 +6,16 @@ const obtenerPedidos = async () => {
 };
 
 const obtenerPedidoPorId = async (id) => {
-    return await Pedido.findById(id).populate('userId', 'nombre email').populate('productos.productoId');
-};
+    return await Pedido.findById(id)
+      .populate({
+        path: 'userId',
+        select: 'nombre email'
+      })
+      .populate({
+        path: 'productos.productoId',
+        select: 'nombre precio descripcion categoria'
+      });
+  };
 
 const obtenerPedidosPorUserId = async (userId) => {
     return await Pedido.find({ userId }).populate('userId', 'nombre email').populate('productos.productoId');
@@ -168,6 +176,53 @@ const obtenerPedidosOrdenados = async () => {
         .sort({ servicio: 1, seccionDelServicio: 1 });
 };
 
+const obtenerPedidosPorClienteId = async (clienteId) => {
+    const Cliente = require('../models/clienteSchema');
+    
+    // Obtener el cliente
+    const cliente = await Cliente.findById(clienteId);
+    
+    if (!cliente) {
+        throw new Error('Cliente no encontrado');
+    }
+    
+    // Construir el filtro basado en la información del cliente
+    const filtro = {
+        servicio: cliente.servicio
+    };
+    
+    // Añadir sección del servicio al filtro si está definido
+    if (cliente.seccionDelServicio && cliente.seccionDelServicio.trim() !== '') {
+        filtro.seccionDelServicio = cliente.seccionDelServicio;
+    }
+    
+    // Si el cliente tiene userId, añadirlo como filtro adicional opcional
+    if (cliente.userId) {
+        // No sobrescribimos el filtro por servicio, sino que lo complementamos
+        // Esto significa que un pedido debe coincidir con el servicio Y ADEMÁS
+        // puede coincidir con el userId O con el servicio+sección
+        filtro.$or = [
+            { userId: cliente.userId }
+        ];
+        
+        // Si ya tenemos una condición por seccionDelServicio, la incluimos como alternativa
+        if (filtro.seccionDelServicio) {
+            filtro.$or.push({ 
+                servicio: cliente.servicio,
+                seccionDelServicio: cliente.seccionDelServicio
+            });
+            // Eliminamos seccionDelServicio del filtro principal ya que ahora está en $or
+            delete filtro.seccionDelServicio;
+        }
+    }
+    
+    // Buscar pedidos que coincidan con los criterios
+    return await Pedido.find(filtro)
+        .populate('userId', 'nombre email')
+        .populate('productos.productoId')
+        .sort({ fecha: -1 }); // Ordenar del más reciente al más antiguo
+};
+
 module.exports = {
     obtenerPedidos,
     obtenerPedidoPorId,
@@ -177,5 +232,6 @@ module.exports = {
     crearPedido,
     actualizarPedido,
     eliminarPedido,
-    obtenerPedidosOrdenados
+    obtenerPedidosOrdenados,
+    obtenerPedidosPorClienteId
 };

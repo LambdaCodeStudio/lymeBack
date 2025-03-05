@@ -4,21 +4,59 @@ const ExcelJS = require('exceljs');
 const Pedido = require('../models/pedidoSchema');
 const Cliente = require('../models/clienteSchema');
 
+// Función para depurar los productos de un pedido
+const debugPedidoProductos = (pedido) => {
+  console.log('===== DEBUG PEDIDO PRODUCTOS =====');
+  console.log(`Pedido ID: ${pedido._id}, Num: ${pedido.numero}`);
+  console.log(`Total productos en pedido: ${pedido.productos?.length || 0}`);
+  
+  if (pedido.productos && Array.isArray(pedido.productos)) {
+    pedido.productos.forEach((item, index) => {
+      console.log(`\nProducto #${index + 1}:`);
+      console.log(`- Raw productoId: ${typeof item.productoId === 'object' ? 'Object' : item.productoId}`);
+      
+      if (item.productoId && typeof item.productoId === 'object') {
+        console.log(`- ID: ${item.productoId._id}`);
+        console.log(`- Nombre: ${item.productoId.nombre || 'Sin nombre'}`);
+        console.log(`- Precio: ${item.productoId.precio || 0}`);
+      } else {
+        console.log('- Producto no poblado correctamente');
+      }
+      
+      console.log(`- Cantidad: ${item.cantidad}`);
+    });
+  } else {
+    console.log('No hay productos en este pedido o el array no existe');
+  }
+  console.log('===== FIN DEBUG PEDIDO PRODUCTOS =====');
+};
+
 /**
  * Generar y descargar un remito en formato PDF
  */
 exports.downloadRemito = async (req, res) => {
   try {
     const pedidoId = req.params.id;
+    console.log(`\n\nGENERANDO REMITO: ${pedidoId}`);
     
-    // Buscar el pedido y poblar datos relacionados
+    // Buscar el pedido con una población completa y explícita
     const pedido = await Pedido.findById(pedidoId)
-      .populate('userId', 'nombre email')
-      .populate('productos.productoId');
+      .populate({
+        path: 'userId',
+        select: 'nombre email'
+      })
+      .populate({
+        path: 'productos.productoId',
+        select: 'nombre precio descripcion categoria'
+      });
     
     if (!pedido) {
+      console.error('Pedido no encontrado:', pedidoId);
       return res.status(404).json({ mensaje: 'Pedido no encontrado' });
     }
+    
+    // Imprimir información de depuración
+    debugPedidoProductos(pedido);
     
     // Obtener información adicional del cliente
     let cliente = null;
@@ -34,14 +72,46 @@ exports.downloadRemito = async (req, res) => {
       cliente = { nombre: 'Cliente no especificado', email: '', direccion: '', telefono: '' };
     }
     
-    // Formatear productos para el PDF
-    const productos = pedido.productos.map(item => {
-      return {
-        nombre: item.productoId ? item.productoId.nombre : 'Producto no disponible',
-        cantidad: item.cantidad || 0,
-        precio: item.productoId ? item.productoId.precio : 0
-      };
+    // Validar y formatear productos con información de precio
+    let productos = [];
+    
+    if (pedido.productos && Array.isArray(pedido.productos)) {
+      productos = pedido.productos.map(item => {
+        // Comprobar si el producto existe y está poblado correctamente
+        const nombre = item.productoId && typeof item.productoId === 'object' && item.productoId.nombre 
+          ? item.productoId.nombre 
+          : 'Producto no disponible';
+          
+        const precio = item.productoId && typeof item.productoId === 'object' && item.productoId.precio
+          ? item.productoId.precio
+          : 0;
+          
+        return {
+          nombre,
+          cantidad: item.cantidad || 0,
+          precio
+        };
+      });
+    }
+    
+    // Si no hay productos, agregar un producto de muestra para debugging
+    if (productos.length === 0) {
+      productos.push({
+        nombre: 'No se encontraron productos en este pedido',
+        cantidad: 0,
+        precio: 0
+      });
+    }
+    
+    // Log de productos formateados para debugging
+    console.log("\nProductos formateados para PDF:");
+    productos.forEach((p, i) => {
+      console.log(`- Producto ${i+1}: "${p.nombre}" (Cantidad: ${p.cantidad}, Precio: $${p.precio}, Subtotal: $${p.precio * p.cantidad})`);
     });
+    
+    // Calcular total general
+    const totalGeneral = productos.reduce((sum, prod) => sum + (prod.precio * prod.cantidad), 0);
+    console.log(`- TOTAL GENERAL: $${totalGeneral}`);
     
     // Generar PDF
     const pdfBuffer = await generarRemitoPDF(pedido, cliente, productos);
@@ -112,7 +182,7 @@ exports.downloadExcel = async (req, res) => {
 };
 
 /**
- * Genera un PDF de remito con paginación automática
+ * Genera un PDF de remito con paginación automática e información de precios
  * @param {Object} pedidoData - Datos del pedido
  * @param {Object} clienteData - Datos del cliente
  * @param {Array} productos - Lista de productos
@@ -121,6 +191,8 @@ exports.downloadExcel = async (req, res) => {
 const generarRemitoPDF = async (pedidoData, clienteData, productos) => {
   return new Promise((resolve, reject) => {
     try {
+      console.log(`Iniciando generación de PDF con ${productos.length} productos`);
+      
       // Configuración de documento
       const doc = new PDFDocument({
         size: 'A4',
@@ -136,7 +208,15 @@ const generarRemitoPDF = async (pedidoData, clienteData, productos) => {
       doc.on('data', buffers.push.bind(buffers));
       doc.on('end', () => {
         const pdfData = Buffer.concat(buffers);
+        console.log('PDF generado exitosamente, tamaño:', pdfData.length);
         resolve(pdfData);
+      });
+
+      // Calcular el total de todos los productos
+      let granTotal = 0;
+      productos.forEach(producto => {
+        const subtotal = (producto.precio || 0) * (producto.cantidad || 0);
+        granTotal += subtotal;
       });
 
       // Constantes para paginación
@@ -146,6 +226,9 @@ const generarRemitoPDF = async (pedidoData, clienteData, productos) => {
 
       // Función para agregar encabezado
       const agregarEncabezado = () => {
+        // Reset to default colors at the beginning
+        doc.fillColor('#000000').strokeColor('#000000');
+        
         // Título del documento
         doc.fontSize(24).font('Helvetica-Bold').text('Lyme Depósito', { align: 'center' });
         doc.fontSize(20).font('Helvetica-Bold').text('REMITO', { align: 'center' });
@@ -177,11 +260,21 @@ const generarRemitoPDF = async (pedidoData, clienteData, productos) => {
         // Agregar paginación
         doc.text(`Página ${paginaActual} de ${totalPaginas}`, 450, 50);
 
-        // Cabecera de tabla
+        // Cabecera de tabla - configurar color negro para el rectángulo
         doc.lineWidth(1);
-        doc.rect(50, 250, 500, 30).fill('#000000');
-        doc.fillColor('#FFFFFF').text('Producto', 60, 260);
-        doc.text('Cantidad', 450, 260);
+        doc.fillColor('#000000');  // Explícitamente negro para el rectángulo
+        doc.rect(50, 250, 500, 30).fill();
+        
+        // Cambiar a color blanco para el texto del encabezado
+        doc.fillColor('#FFFFFF');
+        
+        // Encabezados de columna con espaciado ajustado para incluir precio y total
+        doc.text('Producto', 60, 260);
+        doc.text('Precio Unit.', 250, 260);
+        doc.text('Cantidad', 350, 260);
+        doc.text('Subtotal', 450, 260);
+        
+        // ¡IMPORTANTE! Restablecer el color de relleno a negro para el texto siguiente
         doc.fillColor('#000000');
       };
 
@@ -191,10 +284,35 @@ const generarRemitoPDF = async (pedidoData, clienteData, productos) => {
       // Calcular posición Y de inicio de productos
       let y = 290;
 
+      console.log('Agregando productos al PDF:');
+      
+      // Verificar que productos sea un array
+      if (!Array.isArray(productos) || productos.length === 0) {
+        console.warn('No hay productos para agregar al PDF o no es un array válido');
+        // Agregar un mensaje en el PDF si no hay productos
+        doc.fillColor('#000000');
+        doc.text('No hay productos disponibles para este pedido', 60, y + 10);
+        doc.end();
+        return;
+      }
+
+      // Función para formatear moneda
+      const formatearPrecio = (precio) => {
+        return '$' + precio.toFixed(2).replace(/\d(?=(\d{3})+\.)/g, '$&,');
+      };
+
       // Dibujar productos
       for (let i = 0; i < productos.length; i++) {
+        const producto = productos[i];
+        const precio = producto.precio || 0;
+        const cantidad = producto.cantidad || 0;
+        const subtotal = precio * cantidad;
+        
+        console.log(`  Renderizando producto #${i+1}: ${producto.nombre} - Precio: ${precio} - Cantidad: ${cantidad} - Subtotal: ${subtotal}`);
+        
         // Verificar si necesitamos una nueva página
         if (i > 0 && i % PRODUCTOS_POR_PAGINA === 0) {
+          console.log(`  Agregando nueva página para siguientes productos (página ${paginaActual+1})`);
           paginaActual++;
           doc.addPage();
           agregarEncabezado();
@@ -203,21 +321,42 @@ const generarRemitoPDF = async (pedidoData, clienteData, productos) => {
 
         // Alternar colores para filas
         if (i % 2 === 0) {
-          doc.rect(50, y, 500, 30).fill('#F5F5F5');
+          doc.fillColor('#F5F5F5').rect(50, y, 500, 30).fill();
         }
 
-        // Dibujar datos del producto
-        doc.text(productos[i].nombre, 60, y + 10);
-        doc.text(productos[i].cantidad.toString(), 450, y + 10);
+        // IMPORTANTE: Asegurarse de que el color del texto sea negro antes de dibujar el texto
+        doc.fillColor('#000000');
+        
+        // Obtener nombre y valores por defecto si faltan
+        const nombre = producto.nombre || 'Producto sin nombre';
+        
+        // Dibujar datos del producto con alineación
+        doc.text(nombre, 60, y + 10);
+        doc.text(formatearPrecio(precio), 250, y + 10);
+        doc.text(cantidad.toString(), 350, y + 10);
+        doc.text(formatearPrecio(subtotal), 450, y + 10);
 
         // Incrementar posición Y
         y += 30;
       }
 
+      // Agregar línea separadora para el total
+      doc.lineWidth(1);
+      doc.strokeColor('#000000');
+      doc.moveTo(50, y).lineTo(550, y).stroke();
+      
+      // Mostrar el total
+      doc.font('Helvetica-Bold');
+      doc.text('TOTAL:', 350, y + 15);
+      doc.text(formatearPrecio(granTotal), 450, y + 15);
+      doc.font('Helvetica'); // Volver a la fuente normal
+
       // Finalizar documento
+      console.log('Finalizando documento PDF');
       doc.end();
 
     } catch (error) {
+      console.error('Error en generarRemitoPDF:', error);
       reject(error);
     }
   });
@@ -389,4 +528,9 @@ const generarReporteExcel = async (pedidos, fechaInicio, fechaFin) => {
   
   // Devolver buffer
   return await workbook.xlsx.writeBuffer();
+};
+
+module.exports = {
+  downloadExcel: exports.downloadExcel,
+  downloadRemito: exports.downloadRemito
 };

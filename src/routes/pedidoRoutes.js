@@ -22,6 +22,8 @@ router.post('/', pedidoController.createPedido);
 router.put('/:id', pedidoController.updatePedido);
 router.delete('/:id', pedidoController.deletePedido);
 
+router.get('/cliente/:clienteId', pedidoController.getPedidosByClienteId);
+
 module.exports = router;
 
 
