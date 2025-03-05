@@ -18,7 +18,7 @@ async function actualizarProducto(id, datos) {
     return await Producto.findByIdAndUpdate(id, datos, { new: true, runValidators: true });
 }
 
-async function eliminarProducto(id) {
+async function eliminarProducto(id) { 
     return await Producto.findByIdAndDelete(id);
 }
 

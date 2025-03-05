@@ -141,7 +141,6 @@ async function uploadImagen(req, res) {
         });
       }
       
-      // La corrección clave está aquí: usar productoLogic en lugar de productoService
       const resultado = await productoLogic.updateImagen(id, req.file.buffer);
       
       return res.status(200).json(resultado);
