@@ -12,15 +12,8 @@ const {
   reactivateTemporaryUser
 } = require('../controllers/auth');
 const auth = require('../middleware/auth');
+const { isAdmin, isOnlyAdmin, hasRole } = require('../middleware/roleMiddleware');
 const ROLES = require('../constants/roles');
-
-// Middleware para verificar si es admin
-const isAdmin = (req, res, next) => {
-  if (req.user.role !== ROLES.ADMIN) {
-    return res.status(403).json({ msg: 'Acceso denegado. Se requieren permisos de administrador.' });
-  }
-  next();
-};
 
 // Rutas públicas
 router.post('/login', login);

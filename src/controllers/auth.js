@@ -203,7 +203,6 @@ const getUserById = async (req, res) => {
 };
 
 // Actualizar usuario
-// Actualizar usuario
 const updateUser = async (req, res) => {
   try {
     const user = await User.findById(req.params.id);
