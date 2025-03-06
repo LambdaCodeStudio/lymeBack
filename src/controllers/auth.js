@@ -24,7 +24,8 @@ const createInitialAdmin = async () => {
 const isAllowedToCreate = (creatorRole, newRole) => {
   switch (creatorRole) {
     case ROLES.ADMIN:
-      return [ROLES.SUPERVISOR, ROLES.BASIC, ROLES.TEMPORAL].includes(newRole);
+      // Añadir ROLES.ADMIN a la lista de roles que puede crear un administrador
+      return [ROLES.ADMIN, ROLES.SUPERVISOR, ROLES.BASIC, ROLES.TEMPORAL].includes(newRole);
     case ROLES.SUPERVISOR:
       return [ROLES.BASIC, ROLES.TEMPORAL].includes(newRole);
     case ROLES.BASIC:
@@ -37,7 +38,16 @@ const isAllowedToCreate = (creatorRole, newRole) => {
 // Login
 const login = async (req, res) => {
   try {
-    const user = await User.findOne({ email: req.body.email });
+    const { email, password } = req.body;
+    
+    // Buscar usuario por email o nombre de usuario
+    const user = await User.findOne({
+      $or: [
+        { email: email },
+        { usuario: email } // Usamos el campo email del formulario para buscar en ambos campos
+      ]
+    });
+    
     if (!user) return res.status(400).json({ msg: 'Usuario no existe' });
 
     // Verificar si el usuario está activo
@@ -45,7 +55,7 @@ const login = async (req, res) => {
       return res.status(403).json({ msg: 'Usuario desactivado' });
     }
 
-    const isMatch = await bcrypt.compare(req.body.password, user.password);
+    const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) return res.status(400).json({ msg: 'Contraseña incorrecta' });
 
     // Si es un usuario temporal, verificar si no ha expirado
