@@ -29,10 +29,10 @@ router.post('/register', register);
 router.post('/temporary', createTemporaryUser);
 
 // Rutas de administración (requieren ser admin)
-router.get('/users', isAdmin, getAllUsers);
+router.get('/users', auth, getAllUsers);
 router.get('/users/:id', isAdmin, getUserById);
 router.put('/users/:id', isAdmin, updateUser);
-router.put('/users/:id/:action(activate|deactivate)', isAdmin, toggleUserStatus);
+router.put('/users/:id/:action(activate|deactivate)', auth, toggleUserStatus);
 router.delete('/users/:id', isAdmin, deleteUser);
 router.post('/reactivate-temporary', auth, reactivateTemporaryUser);
 
