@@ -1,6 +1,35 @@
 const mongoose = require('mongoose');
 
+// Esquema de Contador
+const contadorSchema = new mongoose.Schema({
+    _id: { 
+        type: String, 
+        required: true 
+    },
+    secuencia: { 
+        type: Number, 
+        default: 0 
+    }
+});
+
+const Contador = mongoose.model('Contador', contadorSchema);
+
+// Función para obtener el siguiente número de pedido
+async function obtenerSiguienteNumero(nombreColeccion) {
+    const contador = await Contador.findByIdAndUpdate(
+        nombreColeccion, 
+        { $inc: { secuencia: 1 } }, 
+        { new: true, upsert: true }
+    );
+    return contador.secuencia;
+}
+
+// Esquema de Pedido modificado
 const pedidoSchema = new mongoose.Schema({
+    nPedido: {
+        type: Number,
+        unique: true
+    },
     servicio: { 
         type: String, 
         required: true 
@@ -33,6 +62,17 @@ const pedidoSchema = new mongoose.Schema({
         type: String,
         default: ' '
     }
-});    
+});
 
-module.exports = mongoose.model('Pedido', pedidoSchema);
+// Middleware pre-save para generar el número de pedido
+pedidoSchema.pre('save', async function(next) {
+    if (this.isNew) {
+        this.nPedido = await obtenerSiguienteNumero('pedidos');
+    }
+    next();
+});
+
+module.exports = {
+    Pedido: mongoose.model('Pedido', pedidoSchema),
+    Contador: Contador
+};

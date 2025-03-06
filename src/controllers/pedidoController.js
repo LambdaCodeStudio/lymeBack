@@ -52,7 +52,7 @@ exports.createPedido = async (req, res) => {
         const pedido = await pedidoLogic.crearPedido(req.body);
         res.status(201).json(pedido);
     } catch (error) {
-        res.status(500).json({ mensaje: 'Error al crear pedido', error });
+        res.status(500).json({ mensaje: 'Error al crear pedido, verifique el stock de los productos, previo a hacer la compra.', error });
     }
 };
 
