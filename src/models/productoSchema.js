@@ -62,7 +62,9 @@ const productoSchema = new mongoose.Schema({
   },
   imagen: { 
     type: Buffer, 
-    required: false
+    required: false,
+    // Usar select: false para evitar incluir la imagen en las consultas por defecto
+    select: false
   },
   vendidos: { 
     type: Number, 
@@ -90,7 +92,7 @@ const productoSchema = new mongoose.Schema({
     }
   }
 }, {
-  timestamps: true
+  timestamps: true // Agregar createdAt y updatedAt automáticamente
 });
 
 // Pre-save middleware para validar combos
@@ -117,5 +119,13 @@ productoSchema.pre('save', async function(next) {
     next();
   }
 });
+
+// Crear índices para mejorar rendimiento de consultas
+productoSchema.index({ nombre: 1 });
+productoSchema.index({ categoria: 1 });
+productoSchema.index({ subCategoria: 1 });
+productoSchema.index({ 'itemsCombo.productoId': 1 }); // Para búsquedas en combos
+productoSchema.index({ stock: 1 }); // Para consultas de stock bajo
+productoSchema.index({ nombre: 'text', descripcion: 'text', proovedorInfo: 'text' }); // Índice de texto para búsquedas
 
 module.exports = mongoose.model('Producto', productoSchema);

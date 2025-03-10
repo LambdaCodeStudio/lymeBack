@@ -3,11 +3,45 @@ const productoLogic = require('../logic/productoLogic');
 
 async function obtenerTodos(req, res) {
     try {
+        // Implementar paginación
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 20;
+        
+        // Obtener parámetros de filtrado
+        const searchTerm = req.query.search || '';
+        const category = req.query.category || '';
+        
         // Obtener sección del usuario desde el token de autenticación
         const userSeccion = req.user ? req.user.secciones : null;
         
-        const productos = await productoLogic.obtenerProductosPorSeccion(userSeccion);
-        res.json(productos);
+        // Construir filtro base
+        let query = {};
+        
+        // Filtrar por categoría si se especifica
+        if (category && category !== 'all') {
+            query.categoria = category;
+        } else if (userSeccion && userSeccion !== 'ambos') {
+            query.categoria = userSeccion;
+        }
+        
+        // Filtrar por término de búsqueda
+        if (searchTerm) {
+            query.$or = [
+                { nombre: { $regex: searchTerm, $options: 'i' } },
+                { descripcion: { $regex: searchTerm, $options: 'i' } },
+                { proovedorInfo: { $regex: searchTerm, $options: 'i' } }
+            ];
+        }
+        
+        // Obtener productos con paginación y filtros
+        const result = await productoLogic.obtenerProductosPaginados(
+            query, 
+            page, 
+            limit, 
+            userSeccion
+        );
+        
+        res.json(result);
     } catch (error) {
         console.error('Error en obtenerTodos:', error);
         res.status(500).json({ error: 'Error al obtener los productos' });
@@ -315,7 +349,7 @@ async function getImagen(req, res) {
       const { quality = 80, width, height } = req.query; // Parámetros opcionales
       
       // Verificar si el producto existe y pertenece a la sección del usuario
-      const productoActual = await productoLogic.obtenerPorId(id);
+      const productoActual = await productoLogic.obtenerPorIdLigero(id);
       if (!productoActual) {
           return res.status(404).json({ error: 'Producto no encontrado' });
       }
@@ -326,6 +360,17 @@ async function getImagen(req, res) {
           return res.status(403).json({ 
               error: 'No tiene permisos para ver productos de esta categoría' 
           });
+      }
+      
+      // Optimización: Usar ETags para caché
+      const etagFromClient = req.headers['if-none-match'];
+      
+      // Generar ETag basado en fecha de actualización y parámetros de imagen
+      const etag = `W/"img-${id}-${productoActual.updatedAt}-${quality}-${width || 'auto'}-${height || 'auto'}"`;
+      
+      // Si el cliente envió un ETag que coincide, responder con 304 Not Modified
+      if (etagFromClient === etag) {
+          return res.status(304).end();
       }
       
       // Validar que la calidad esté entre 1 y 100
@@ -357,7 +402,8 @@ async function getImagen(req, res) {
         // Configurar los headers para la imagen WebP
         res.set('Content-Type', 'image/webp');
         // Agregar cache-control para mejor rendimiento
-        res.set('Cache-Control', 'public, max-age=31536000'); // 1 año
+        res.set('ETag', etag);
+        res.set('Cache-Control', 'public, max-age=86400'); // 1 día
         return res.send(webpImage);
         
       } catch (error) {
