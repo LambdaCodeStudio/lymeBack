@@ -10,9 +10,10 @@ const createInitialAdmin = async () => {
     const adminExists = await User.findOne({ role: ROLES.ADMIN });
     if (!adminExists) {
       await User.create({
-        email: process.env.ADMIN_EMAIL,
+        usuario: process.env.ADMIN_USERNAME || 'admin',
         password: process.env.ADMIN_PASSWORD,
-        role: ROLES.ADMIN
+        role: ROLES.ADMIN,
+        secciones: 'ambos'
       });
     }
   } catch (error) {
@@ -20,33 +21,25 @@ const createInitialAdmin = async () => {
   }
 };
 
-// Función auxiliar para validar permisos de creación
+// Función actualizada para validar permisos de creación con la nueva jerarquía
 const isAllowedToCreate = (creatorRole, newRole) => {
   switch (creatorRole) {
     case ROLES.ADMIN:
-      // Añadir ROLES.ADMIN a la lista de roles que puede crear un administrador
-      return [ROLES.ADMIN, ROLES.SUPERVISOR, ROLES.BASIC, ROLES.TEMPORAL].includes(newRole);
-    case ROLES.SUPERVISOR:
-      return [ROLES.BASIC, ROLES.TEMPORAL].includes(newRole);
-    case ROLES.BASIC:
-      return [ROLES.TEMPORAL].includes(newRole);
+      return [ROLES.ADMIN, ROLES.SUPERVISOR_DE_SUPERVISORES, ROLES.SUPERVISOR, ROLES.OPERARIO, ROLES.TEMPORARIO].includes(newRole);
+    case ROLES.SUPERVISOR_DE_SUPERVISORES:
+      return [ROLES.SUPERVISOR, ROLES.OPERARIO, ROLES.TEMPORARIO].includes(newRole);
     default:
       return false;
   }
 };
 
-// Login
+// Login actualizado para usar usuario en lugar de email
 const login = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { usuario, password } = req.body;
     
-    // Buscar usuario por email o nombre de usuario
-    const user = await User.findOne({
-      $or: [
-        { email: email },
-        { usuario: email } // Usamos el campo email del formulario para buscar en ambos campos
-      ]
-    });
+    // Buscar usuario solo por nombre de usuario
+    const user = await User.findOne({ usuario: usuario });
     
     if (!user) return res.status(400).json({ msg: 'Usuario no existe' });
 
@@ -58,8 +51,9 @@ const login = async (req, res) => {
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) return res.status(400).json({ msg: 'Contraseña incorrecta' });
 
-    // Si es un usuario temporal, verificar si no ha expirado
-    if (user.role === ROLES.TEMPORAL) {
+    // Si es un usuario temporario, verificar si no ha expirado
+    if (user.role === ROLES.TEMPORARIO || 
+        (user.role === ROLES.OPERARIO && user.expiresAt)) {
       if (!user.expiresAt) {
         await User.deleteOne({ _id: user._id });
         return res.status(401).json({ msg: 'Usuario temporal inválido' });
@@ -78,7 +72,7 @@ const login = async (req, res) => {
   }
 };
 
-// Registro de usuario
+// Registro de usuario con nueva lógica de roles
 const register = async (req, res) => {
   try {
     const creator = await User.findById(req.user.id);
@@ -86,18 +80,24 @@ const register = async (req, res) => {
       return res.status(401).json({ msg: 'Usuario creador no encontrado' });
     }
 
-    const { role } = req.body;
+    const { role, isTemporary } = req.body;
     
     if (!isAllowedToCreate(creator.role, role)) {
       return res.status(403).json({ msg: 'No tienes permisos para crear este tipo de usuario' });
     }
 
-    const user = new User({
-      ...req.body,
-      createdBy: creator._id
-    });
+    // Si es un operario temporal, configurar fecha de expiración
+    let userData = { ...req.body, createdBy: creator._id };
+    
+    if (role === ROLES.OPERARIO && isTemporary) {
+      const expirationDate = new Date();
+      expirationDate.setMinutes(expirationDate.getMinutes() + 30); // 30 minutos por defecto
+      userData.expiresAt = expirationDate;
+    }
 
+    const user = new User(userData);
     await user.save();
+    
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET);
     res.json({ token });
   } catch (error) {
@@ -105,7 +105,7 @@ const register = async (req, res) => {
   }
 };
 
-// Crear usuario temporal
+// Crear usuario temporario
 const createTemporaryUser = async (req, res) => {
   try {
     const creator = await User.findById(req.user.id);
@@ -113,7 +113,7 @@ const createTemporaryUser = async (req, res) => {
       return res.status(401).json({ msg: 'Usuario creador no encontrado' });
     }
 
-    if (!isAllowedToCreate(creator.role, ROLES.TEMPORAL)) {
+    if (!isAllowedToCreate(creator.role, ROLES.TEMPORARIO)) {
       return res.status(403).json({ msg: 'No tienes permisos para crear usuarios temporales' });
     }
 
@@ -122,7 +122,7 @@ const createTemporaryUser = async (req, res) => {
 
     const temporalUser = new User({
       ...req.body,
-      role: ROLES.TEMPORAL,
+      role: ROLES.TEMPORARIO,
       createdBy: creator._id,
       expiresAt: expirationDate
     });
@@ -135,20 +135,22 @@ const createTemporaryUser = async (req, res) => {
   }
 };
 
-// Obtener todos los usuarios
+// Obtener todos los usuarios con nueva jerarquía de roles
 const getAllUsers = async (req, res) => {
   try {
     // Obtener todos los usuarios sin filtrar por expiración
     const users = await User.find()
       .select('-password')
-      .populate('createdBy', 'email');
+      .populate('createdBy', 'usuario nombre apellido');
     
     // Procesar cada usuario para actualizar su estado
     const processedUsers = await Promise.all(users.map(async (user) => {
       const userObj = user.toObject();
 
-      // Manejar usuarios temporales
-      if (user.role === ROLES.TEMPORAL && user.expiresAt) {
+      // Manejar usuarios temporales y operarios temporales
+      if ((user.role === ROLES.TEMPORARIO || 
+          (user.role === ROLES.OPERARIO && user.expiresAt)) && 
+          user.expiresAt) {
         const now = new Date();
         const expirationDate = new Date(user.expiresAt);
         
@@ -179,10 +181,11 @@ const getAllUsers = async (req, res) => {
       if (!a.isActive && b.isActive) return 1;
       
       const rolePriority = {
-        [ROLES.ADMIN]: 4,
+        [ROLES.ADMIN]: 5,
+        [ROLES.SUPERVISOR_DE_SUPERVISORES]: 4,
         [ROLES.SUPERVISOR]: 3,
-        [ROLES.BASIC]: 2,
-        [ROLES.TEMPORAL]: 1
+        [ROLES.OPERARIO]: 2,
+        [ROLES.TEMPORARIO]: 1
       };
       
       return (rolePriority[b.role] || 0) - (rolePriority[a.role] || 0);
@@ -200,7 +203,7 @@ const getUserById = async (req, res) => {
   try {
     const user = await User.findById(req.params.id)
       .select('-password')
-      .populate('createdBy', 'email');
+      .populate('createdBy', 'usuario nombre apellido');
     
     if (!user) {
       return res.status(404).json({ msg: 'Usuario no encontrado' });
@@ -212,7 +215,7 @@ const getUserById = async (req, res) => {
   }
 };
 
-// Actualizar usuario
+// Actualizar usuario con nueva jerarquía
 const updateUser = async (req, res) => {
   try {
     const user = await User.findById(req.params.id);
@@ -237,7 +240,18 @@ const updateUser = async (req, res) => {
 
     // Verificar si se está actualizando el estado isActive
     if (updateData.isActive !== undefined) {
-      updateData.isActive = updateData.isActive === 'true';
+      updateData.isActive = updateData.isActive === 'true' || updateData.isActive === true;
+    }
+
+    // Gestionar operario temporal
+    if (user.role === ROLES.OPERARIO && updateData.isTemporary !== undefined) {
+      if (updateData.isTemporary) {
+        const expirationDate = new Date();
+        expirationDate.setMinutes(expirationDate.getMinutes() + 30);
+        updateData.expiresAt = expirationDate;
+      } else {
+        updateData.expiresAt = null;
+      }
     }
 
     const updatedUser = await User.findByIdAndUpdate(
@@ -300,13 +314,14 @@ const getCurrentUser = async (req, res) => {
   try {
     const user = await User.findById(req.user.id)
       .select('-password')
-      .populate('createdBy', 'email');
+      .populate('createdBy', 'usuario nombre apellido');
     res.json(user);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 };
 
+// Activar/desactivar usuario
 const toggleUserStatus = async (req, res) => {
   try {
     const { id, action } = req.params;
@@ -318,8 +333,10 @@ const toggleUserStatus = async (req, res) => {
       return res.status(404).json({ msg: 'Usuario no encontrado' });
     }
 
-    // Si estamos activando un usuario temporal
-    if (isActivating && user.role === ROLES.TEMPORAL) {
+    // Si estamos activando un usuario temporal o un operario temporal
+    if (isActivating && 
+        (user.role === ROLES.TEMPORARIO || 
+         (user.role === ROLES.OPERARIO && user.expiresAt))) {
       // Establecer nueva fecha de expiración
       const newExpirationDate = new Date();
       newExpirationDate.setMinutes(newExpirationDate.getMinutes() + 30);
@@ -333,7 +350,7 @@ const toggleUserStatus = async (req, res) => {
     // Obtener el usuario actualizado con sus relaciones
     const updatedUser = await User.findById(id)
       .select('-password')
-      .populate('createdBy', 'email');
+      .populate('createdBy', 'usuario nombre apellido');
 
     res.json(updatedUser);
   } catch (error) {
@@ -342,6 +359,7 @@ const toggleUserStatus = async (req, res) => {
   }
 };
 
+// Reactivar usuario temporal
 const reactivateTemporaryUser = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -351,8 +369,9 @@ const reactivateTemporaryUser = async (req, res) => {
       return res.status(404).json({ msg: 'Usuario no encontrado' });
     }
 
-    // Verificar que sea un usuario temporal
-    if (user.role !== ROLES.TEMPORAL) {
+    // Verificar que sea un usuario temporal o un operario temporal
+    if (user.role !== ROLES.TEMPORARIO && 
+        !(user.role === ROLES.OPERARIO && user.expiresAt)) {
       return res.status(403).json({ msg: 'Solo usuarios temporales pueden ser reactivados' });
     }
 

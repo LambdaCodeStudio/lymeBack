@@ -3,19 +3,40 @@ const bcrypt = require('bcryptjs');
 const ROLES = require('../constants/roles');
 
 const userSchema = new mongoose.Schema({
-  email: { type: String, required: false, unique: true, sparse: true },
-  usuario: { type: String, required: false, unique: true, sparse: true }, // Nuevo campo usuario
-  password: { type: String, required: true },
+  usuario: { 
+    type: String, 
+    required: true, 
+    unique: true 
+  },
+  password: { 
+    type: String, 
+    required: true 
+  },
   role: { 
     type: String, 
     enum: Object.values(ROLES),
     required: true
   },
-  celular: { type: String, required: false },
-  nombre: { type: String, required: false },
-  apellido: { type: String, required: false },
-  direccion: { type: String, required: false },
-  ciudad: { type: String, required: false },
+  celular: { 
+    type: String, 
+    required: false 
+  },
+  nombre: { 
+    type: String, 
+    required: false 
+  },
+  apellido: { 
+    type: String, 
+    required: false 
+  },
+  direccion: { 
+    type: String, 
+    required: false 
+  },
+  ciudad: { 
+    type: String, 
+    required: false 
+  },
   isActive: {
     type: Boolean,
     default: true
@@ -28,9 +49,10 @@ const userSchema = new mongoose.Schema({
     type: Date,
     default: null
   },
-  secciones:{
+  secciones: {
     type: String,
-    enum: ['limpieza', 'mantenimiento','ambos'],
+    enum: ['limpieza', 'mantenimiento', 'ambos'],
+    required: true  // Ahora es obligatorio
   }
 }, { timestamps: true });
 

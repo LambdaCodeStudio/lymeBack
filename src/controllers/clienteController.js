@@ -61,7 +61,14 @@ exports.getClienteById = async (req, res) => {
 // Obtener clientes por ID de usuario
 exports.getClientesByUserId = async (req, res) => {
     try {
-        const clientes = await Cliente.find({ userId: req.params.userId })
+        // Validar que el ID de usuario sea un ObjectId válido
+        const userId = req.params.userId;
+        if (!mongoose.Types.ObjectId.isValid(userId)) {
+            return res.status(400).json({ mensaje: 'ID de usuario inválido' });
+        }
+
+        // Buscar clientes asociados al userId
+        const clientes = await Cliente.find({ userId: userId })
             .populate('userId', 'email usuario nombre apellido role isActive')
             .exec();
         
@@ -69,6 +76,7 @@ exports.getClientesByUserId = async (req, res) => {
         const clientesProcesados = clientes.map(cliente => {
             const clienteObj = cliente.toObject();
             
+            // Verificar si el userId existe y es una referencia válida
             const necesitaReasignacion = !cliente.userId || 
                 (typeof cliente.userId === 'object' && cliente.userId.isActive === false);
             
@@ -81,7 +89,12 @@ exports.getClientesByUserId = async (req, res) => {
         
         res.json(clientesProcesados);
     } catch (error) {
-        res.status(500).json({ mensaje: 'Error al obtener clientes', error: error.message });
+        console.error('Error al obtener clientes por userId:', error);
+        res.status(500).json({ 
+            mensaje: 'Error al obtener clientes', 
+            error: error.message,
+            stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        });
     }
 };
 
