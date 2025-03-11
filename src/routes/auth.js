@@ -2,14 +2,13 @@ const router = require('express').Router();
 const { 
   login,
   register,
-  createTemporaryUser,
   getAllUsers,
   getUserById,
   updateUser,
   deleteUser,
   getCurrentUser,
   toggleUserStatus,
-  reactivateTemporaryUser
+  reactivateTemporaryOperator
 } = require('../controllers/auth');
 const auth = require('../middleware/auth');
 const { isAdmin, isOnlyAdmin, hasRole } = require('../middleware/roleMiddleware');
@@ -26,7 +25,6 @@ router.get('/me', getCurrentUser);
 
 // Rutas de registro (requieren autenticación)
 router.post('/register', register);
-router.post('/temporary', createTemporaryUser);
 
 // Rutas de administración (requieren ser admin)
 router.get('/users', auth, getAllUsers);
@@ -34,6 +32,6 @@ router.get('/users/:id', auth, getUserById);
 router.put('/users/:id', auth, updateUser);
 router.put('/users/:id/:action(activate|deactivate)', auth, toggleUserStatus);
 router.delete('/users/:id', auth, deleteUser);
-router.post('/reactivate-temporary', auth, reactivateTemporaryUser);
+router.post('/reactivate-temporary', auth, reactivateTemporaryOperator);
 
 module.exports = router;

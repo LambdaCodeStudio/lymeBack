@@ -25,15 +25,15 @@ const createInitialAdmin = async () => {
 const isAllowedToCreate = (creatorRole, newRole) => {
   switch (creatorRole) {
     case ROLES.ADMIN:
-      return [ROLES.ADMIN, ROLES.SUPERVISOR_DE_SUPERVISORES, ROLES.SUPERVISOR, ROLES.OPERARIO, ROLES.TEMPORARIO].includes(newRole);
+      return [ROLES.ADMIN, ROLES.SUPERVISOR_DE_SUPERVISORES, ROLES.SUPERVISOR, ROLES.OPERARIO].includes(newRole);
     case ROLES.SUPERVISOR_DE_SUPERVISORES:
-      return [ROLES.SUPERVISOR, ROLES.OPERARIO, ROLES.TEMPORARIO].includes(newRole);
+      return [ROLES.SUPERVISOR, ROLES.OPERARIO].includes(newRole);
     default:
       return false;
   }
 };
 
-// Login actualizado para usar usuario en lugar de email
+// Login actualizado
 const login = async (req, res) => {
   try {
     const { usuario, password } = req.body;
@@ -51,9 +51,8 @@ const login = async (req, res) => {
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) return res.status(400).json({ msg: 'Contraseña incorrecta' });
 
-    // Si es un usuario temporario, verificar si no ha expirado
-    if (user.role === ROLES.TEMPORARIO || 
-        (user.role === ROLES.OPERARIO && user.expiresAt)) {
+    // Si es un operario con expiración, verificar si no ha expirado
+    if (user.role === ROLES.OPERARIO && user.expiresAt) {
       if (!user.expiresAt) {
         await User.deleteOne({ _id: user._id });
         return res.status(401).json({ msg: 'Usuario temporal inválido' });
@@ -86,7 +85,7 @@ const register = async (req, res) => {
       return res.status(403).json({ msg: 'No tienes permisos para crear este tipo de usuario' });
     }
 
-    // Si es un operario temporal, configurar fecha de expiración
+    // Gestionar operario temporal
     let userData = { ...req.body, createdBy: creator._id };
     
     if (role === ROLES.OPERARIO && isTemporary) {
@@ -105,36 +104,6 @@ const register = async (req, res) => {
   }
 };
 
-// Crear usuario temporario
-const createTemporaryUser = async (req, res) => {
-  try {
-    const creator = await User.findById(req.user.id);
-    if (!creator) {
-      return res.status(401).json({ msg: 'Usuario creador no encontrado' });
-    }
-
-    if (!isAllowedToCreate(creator.role, ROLES.TEMPORARIO)) {
-      return res.status(403).json({ msg: 'No tienes permisos para crear usuarios temporales' });
-    }
-
-    const expirationDate = new Date();
-    expirationDate.setMinutes(expirationDate.getMinutes() + 30);
-
-    const temporalUser = new User({
-      ...req.body,
-      role: ROLES.TEMPORARIO,
-      createdBy: creator._id,
-      expiresAt: expirationDate
-    });
-
-    await temporalUser.save();
-    const token = jwt.sign({ id: temporalUser._id }, process.env.JWT_SECRET);
-    res.json({ token, expiresAt: expirationDate });
-  } catch (error) {
-    res.status(400).json({ error: error.message });
-  }
-};
-
 // Obtener todos los usuarios con nueva jerarquía de roles
 const getAllUsers = async (req, res) => {
   try {
@@ -147,10 +116,8 @@ const getAllUsers = async (req, res) => {
     const processedUsers = await Promise.all(users.map(async (user) => {
       const userObj = user.toObject();
 
-      // Manejar usuarios temporales y operarios temporales
-      if ((user.role === ROLES.TEMPORARIO || 
-          (user.role === ROLES.OPERARIO && user.expiresAt)) && 
-          user.expiresAt) {
+      // Manejar operarios temporales
+      if (user.role === ROLES.OPERARIO && user.expiresAt) {
         const now = new Date();
         const expirationDate = new Date(user.expiresAt);
         
@@ -184,8 +151,7 @@ const getAllUsers = async (req, res) => {
         [ROLES.ADMIN]: 5,
         [ROLES.SUPERVISOR_DE_SUPERVISORES]: 4,
         [ROLES.SUPERVISOR]: 3,
-        [ROLES.OPERARIO]: 2,
-        [ROLES.TEMPORARIO]: 1
+        [ROLES.OPERARIO]: 2
       };
       
       return (rolePriority[b.role] || 0) - (rolePriority[a.role] || 0);
@@ -333,10 +299,8 @@ const toggleUserStatus = async (req, res) => {
       return res.status(404).json({ msg: 'Usuario no encontrado' });
     }
 
-    // Si estamos activando un usuario temporal o un operario temporal
-    if (isActivating && 
-        (user.role === ROLES.TEMPORARIO || 
-         (user.role === ROLES.OPERARIO && user.expiresAt))) {
+    // Si estamos activando un operario temporal
+    if (isActivating && user.role === ROLES.OPERARIO && user.expiresAt) {
       // Establecer nueva fecha de expiración
       const newExpirationDate = new Date();
       newExpirationDate.setMinutes(newExpirationDate.getMinutes() + 30);
@@ -359,8 +323,8 @@ const toggleUserStatus = async (req, res) => {
   }
 };
 
-// Reactivar usuario temporal
-const reactivateTemporaryUser = async (req, res) => {
+// Reactivar operario temporal
+const reactivateTemporaryOperator = async (req, res) => {
   try {
     const userId = req.user.id;
     const user = await User.findById(userId);
@@ -369,10 +333,9 @@ const reactivateTemporaryUser = async (req, res) => {
       return res.status(404).json({ msg: 'Usuario no encontrado' });
     }
 
-    // Verificar que sea un usuario temporal o un operario temporal
-    if (user.role !== ROLES.TEMPORARIO && 
-        !(user.role === ROLES.OPERARIO && user.expiresAt)) {
-      return res.status(403).json({ msg: 'Solo usuarios temporales pueden ser reactivados' });
+    // Verificar que sea un operario temporal
+    if (user.role !== ROLES.OPERARIO || !user.expiresAt) {
+      return res.status(403).json({ msg: 'Solo operarios temporales pueden ser reactivados' });
     }
 
     // Verificar si ya está desactivado
@@ -388,7 +351,7 @@ const reactivateTemporaryUser = async (req, res) => {
       await user.save();
 
       return res.json({ 
-        msg: 'Usuario temporal reactivado', 
+        msg: 'Operario temporal reactivado', 
         expiresAt: newExpirationDate 
       });
     }
@@ -401,7 +364,7 @@ const reactivateTemporaryUser = async (req, res) => {
 
   } catch (error) {
     res.status(500).json({ 
-      msg: 'Error al reactivar usuario temporal', 
+      msg: 'Error al reactivar operario temporal', 
       error: error.message 
     });
   }
@@ -410,7 +373,6 @@ const reactivateTemporaryUser = async (req, res) => {
 module.exports = {
   login,
   register,
-  createTemporaryUser,
   createInitialAdmin,
   getAllUsers,
   getUserById,
@@ -418,5 +380,5 @@ module.exports = {
   deleteUser,
   getCurrentUser,
   toggleUserStatus,
-  reactivateTemporaryUser
+  reactivateTemporaryOperator
 };

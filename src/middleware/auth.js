@@ -55,13 +55,11 @@ const auth = async (req, res, next) => {
       });
     }
 
-    // Verificar usuarios temporales o operarios temporales
-    if ((user.role === ROLES.TEMPORARIO || 
-        (user.role === ROLES.OPERARIO && user.expiresAt)) && 
-        user.expiresAt) {
+    // Verificar operarios temporales
+    if (user.role === ROLES.OPERARIO && user.expiresAt) {
       const now = new Date();
       if (user.expiresAt < now) {
-        // Desactivar usuario temporal expirado
+        // Desactivar operario temporal expirado
         user.isActive = false;
         await user.save();
         
