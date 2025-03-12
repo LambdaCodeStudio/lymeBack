@@ -227,8 +227,8 @@ async function eliminarProducto(id) {
     // Verificar si hay combos que incluyen este producto
     const combosConProducto = await Producto.find({
         esCombo: true,
-        'itemsCombo.productoId': mongoose.Types.ObjectId(id)
-    });
+        'itemsCombo.productoId': new mongoose.Types.ObjectId(id)
+    });    
     
     if (combosConProducto.length > 0) {
         const comboNames = combosConProducto.map(c => c.nombre).join(', ');
