@@ -370,6 +370,30 @@ const reactivateTemporaryOperator = async (req, res) => {
   }
 };
 
+const getSupervisors = async (req, res) => {
+  try {
+    console.log('Iniciando búsqueda de supervisores');
+    console.log('Usuario solicitante:', req.user);
+
+    // Obtener solo usuarios con rol de supervisor activos
+    const supervisors = await User.find({ 
+      role: ROLES.SUPERVISOR, 
+      isActive: true 
+    }).select('_id usuario nombre apellido role');
+    
+    console.log('Supervisores encontrados:', supervisors.length);
+    
+    res.json(supervisors);
+  } catch (error) {
+    console.error('Error detallado al obtener supervisores:', error);
+    res.status(500).json({ 
+      mensaje: 'Error al obtener supervisores', 
+      error: error.message,
+      detalles: process.env.NODE_ENV !== 'production' ? error.stack : undefined
+    });
+  }
+};
+
 module.exports = {
   login,
   register,
@@ -380,5 +404,6 @@ module.exports = {
   deleteUser,
   getCurrentUser,
   toggleUserStatus,
-  reactivateTemporaryOperator
+  reactivateTemporaryOperator,
+  getSupervisors
 };

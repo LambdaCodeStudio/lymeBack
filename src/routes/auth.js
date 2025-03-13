@@ -33,5 +33,6 @@ router.put('/users/:id', auth, updateUser);
 router.put('/users/:id/:action(activate|deactivate)', auth, toggleUserStatus);
 router.delete('/users/:id', auth, deleteUser);
 router.post('/reactivate-temporary', auth, reactivateTemporaryOperator);
+router.get('/supervisors', auth, getSupervisors);
 
 module.exports = router;

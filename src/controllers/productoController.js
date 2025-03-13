@@ -1,11 +1,9 @@
 // src/controllers/productoController.js
 const productoLogic = require('../logic/productoLogic');
-const cacheService = require('../services/cacheService');
 
-// Controlador optimizado para obtener todos los productos
 async function obtenerTodos(req, res) {
     try {
-        // Implementar paginación con valores por defecto optimizados
+        // Implementar paginación
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 20;
         
@@ -13,36 +11,26 @@ async function obtenerTodos(req, res) {
         const searchTerm = req.query.search || '';
         const category = req.query.category || '';
         
-        // Obtener sección del usuario
+        // Obtener sección del usuario desde el token de autenticación
         const userSeccion = req.user ? req.user.secciones : null;
         
         // Construir filtro base
         let query = {};
         
-        // Optimizar construcción de query
+        // Filtrar por categoría si se especifica
         if (category && category !== 'all') {
             query.categoria = category;
         } else if (userSeccion && userSeccion !== 'ambos') {
             query.categoria = userSeccion;
         }
         
-        // Filtrar por término de búsqueda optimizado
+        // Filtrar por término de búsqueda
         if (searchTerm) {
-            // Usar índice de texto si existe, sino usar expresiones regulares
-            if (searchTerm.length >= 3) {
-                query.$or = [
-                    { nombre: { $regex: searchTerm, $options: 'i' } },
-                    { descripcion: { $regex: searchTerm, $options: 'i' } }
-                ];
-                
-                // Solo buscar en proovedorInfo si es necesario (último)
-                if (searchTerm.length >= 5) {
-                    query.$or.push({ proovedorInfo: { $regex: searchTerm, $options: 'i' } });
-                }
-            } else {
-                // Para términos muy cortos, solo buscar en nombre para mejor rendimiento
-                query.nombre = { $regex: searchTerm, $options: 'i' };
-            }
+            query.$or = [
+                { nombre: { $regex: searchTerm, $options: 'i' } },
+                { descripcion: { $regex: searchTerm, $options: 'i' } },
+                { proovedorInfo: { $regex: searchTerm, $options: 'i' } }
+            ];
         }
         
         // Obtener productos con paginación y filtros
@@ -53,8 +41,6 @@ async function obtenerTodos(req, res) {
             userSeccion
         );
         
-        // Configurar cache-control en la respuesta
-        res.set('Cache-Control', 'private, max-age=60'); // 1 minuto
         res.json(result);
     } catch (error) {
         console.error('Error en obtenerTodos:', error);
@@ -62,7 +48,6 @@ async function obtenerTodos(req, res) {
     }
 }
 
-// Controlador optimizado para obtener producto por ID
 async function obtenerPorId(req, res) {
     try {
         const producto = await productoLogic.obtenerPorId(req.params.id);
@@ -78,8 +63,6 @@ async function obtenerPorId(req, res) {
             });
         }
         
-        // Configurar cache-control en la respuesta
-        res.set('Cache-Control', 'private, max-age=300'); // 5 minutos
         res.json(producto);
     } catch (error) {
         console.error('Error en obtenerPorId:', error);
@@ -90,10 +73,9 @@ async function obtenerPorId(req, res) {
     }
 }
 
-// Controlador optimizado para crear producto
 async function crearProducto(req, res) {
     try {
-        // Validaciones optimizadas
+        // Validaciones adicionales
         if (req.body.precio < 0) {
             return res.status(400).json({ error: 'El precio no puede ser negativo' });
         }
@@ -129,16 +111,15 @@ async function crearProducto(req, res) {
     }
 }
 
-// Controlador optimizado para actualizar producto
 async function actualizarProducto(req, res) {
     try {
-        // Validaciones optimizadas
+        // Validaciones adicionales
         if (req.body.precio !== undefined && req.body.precio < 0) {
             return res.status(400).json({ error: 'El precio no puede ser negativo' });
         }
         
-        // Obtener producto actual para validaciones (versión ligera)
-        const productoActual = await productoLogic.obtenerPorIdLigero(req.params.id);
+        // Obtener producto actual para validar categoría
+        const productoActual = await productoLogic.obtenerPorId(req.params.id);
         if (!productoActual) {
             return res.status(404).json({ error: 'Producto no encontrado' });
         }
@@ -170,6 +151,9 @@ async function actualizarProducto(req, res) {
         }
 
         const producto = await productoLogic.actualizarProducto(req.params.id, req.body);
+        if (!producto) {
+            return res.status(404).json({ error: 'Producto no encontrado' });
+        }
         res.json(producto);
     } catch (error) {
         console.error('Error en actualizarProducto:', error);
@@ -183,11 +167,10 @@ async function actualizarProducto(req, res) {
     }
 }
 
-// Controlador optimizado para eliminar producto
 async function eliminarProducto(req, res) {
     try {
-        // Verificar si el producto existe (versión ligera)
-        const productoActual = await productoLogic.obtenerPorIdLigero(req.params.id);
+        // Verificar si el producto existe
+        const productoActual = await productoLogic.obtenerPorId(req.params.id);
         if (!productoActual) {
             return res.status(404).json({ error: 'Producto no encontrado' });
         }
@@ -200,7 +183,7 @@ async function eliminarProducto(req, res) {
             });
         }
         
-        await productoLogic.eliminarProducto(req.params.id);
+        const producto = await productoLogic.eliminarProducto(req.params.id);
         res.json({ mensaje: 'Producto eliminado correctamente' });
     } catch (error) {
         console.error('Error en eliminarProducto:', error);
@@ -211,11 +194,10 @@ async function eliminarProducto(req, res) {
     }
 }
 
-// Controlador optimizado para vender producto
 async function venderProducto(req, res) {
     try {
-        // Verificar si el producto existe (versión ligera)
-        const productoActual = await productoLogic.obtenerPorIdLigero(req.params.id);
+        // Verificar si el producto existe y pertenece a la sección del usuario
+        const productoActual = await productoLogic.obtenerPorId(req.params.id);
         if (!productoActual) {
             return res.status(404).json({ error: 'Producto no encontrado' });
         }
@@ -238,7 +220,6 @@ async function venderProducto(req, res) {
                 return res.status(400).json({ error: 'No se pudo procesar la venta del producto' });
             }
         }
-        
         res.json({ 
             mensaje: 'Venta realizada con éxito',
             producto 
@@ -252,11 +233,10 @@ async function venderProducto(req, res) {
     }
 }
 
-// Controlador optimizado para cancelar venta
 async function cancelarVenta(req, res) {
     try {
-        // Verificar si el producto existe (versión ligera)
-        const productoActual = await productoLogic.obtenerPorIdLigero(req.params.id);
+        // Verificar si el producto existe y pertenece a la sección del usuario
+        const productoActual = await productoLogic.obtenerPorId(req.params.id);
         if (!productoActual) {
             return res.status(404).json({ error: 'Producto no encontrado' });
         }
@@ -271,9 +251,8 @@ async function cancelarVenta(req, res) {
         
         const producto = await productoLogic.cancelarVenta(req.params.id);
         if (!producto) {
-            return res.status(400).json({ error: 'No se pudo cancelar la venta del producto' });
+            return res.status(404).json({ error: 'Producto no encontrado' });
         }
-        
         res.json({ 
             mensaje: 'Venta cancelada correctamente',
             producto 
@@ -287,7 +266,6 @@ async function cancelarVenta(req, res) {
     }
 }
 
-// Controlador optimizado para subir imagen
 async function uploadImagen(req, res) {
     try {
       const { id } = req.params;
@@ -299,8 +277,8 @@ async function uploadImagen(req, res) {
         });
       }
       
-      // Verificar si el producto existe (versión ligera)
-      const productoActual = await productoLogic.obtenerPorIdLigero(id);
+      // Verificar si el producto existe y pertenece a la sección del usuario
+      const productoActual = await productoLogic.obtenerPorId(id);
       if (!productoActual) {
           return res.status(404).json({ error: 'Producto no encontrado' });
       }
@@ -313,13 +291,7 @@ async function uploadImagen(req, res) {
           });
       }
       
-      // Optimización: comprimir imagen antes de guardar
-      const sharp = require('sharp');
-      const optimizedBuffer = await sharp(req.file.buffer)
-        .resize(800, 800, { fit: 'inside', withoutEnlargement: true })
-        .toBuffer();
-      
-      const resultado = await productoLogic.updateImagen(id, optimizedBuffer);
+      const resultado = await productoLogic.updateImagen(id, req.file.buffer);
       
       return res.status(200).json(resultado);
     } catch (error) {
@@ -331,7 +303,7 @@ async function uploadImagen(req, res) {
     }
 }
 
-// Controlador optimizado para subir imagen en formato base64
+// Controlador para subir imagen en formato base64
 async function uploadImagenBase64(req, res) {
     try {
       const { id } = req.params;
@@ -344,8 +316,8 @@ async function uploadImagenBase64(req, res) {
         });
       }
       
-      // Verificar si el producto existe (versión ligera)
-      const productoActual = await productoLogic.obtenerPorIdLigero(id);
+      // Verificar si el producto existe y pertenece a la sección del usuario
+      const productoActual = await productoLogic.obtenerPorId(id);
       if (!productoActual) {
           return res.status(404).json({ error: 'Producto no encontrado' });
       }
@@ -370,28 +342,13 @@ async function uploadImagenBase64(req, res) {
     }
 }
   
-// Controlador optimizado para obtener imagen
+// Controlador para obtener una imagen
 async function getImagen(req, res) {
     try {
       const { id } = req.params;
-      const { quality = 80, width, height } = req.query;
+      const { quality = 80, width, height } = req.query; // Parámetros opcionales
       
-      // Crear clave de caché única para esta configuración de imagen
-      const cacheKey = `imagen_${id}_${quality}_${width || 'auto'}_${height || 'auto'}`;
-      
-      // Verificar en caché primero
-      const cachedImageResponse = cacheService.productos.get(cacheKey);
-      if (cachedImageResponse) {
-        // Establecer los encabezados desde la caché
-        Object.entries(cachedImageResponse.headers).forEach(([key, value]) => {
-          res.set(key, value);
-        });
-        
-        // Devolver la imagen en caché
-        return res.send(cachedImageResponse.data);
-      }
-      
-      // Verificar si el producto existe con consulta ligera
+      // Verificar si el producto existe y pertenece a la sección del usuario
       const productoActual = await productoLogic.obtenerPorIdLigero(id);
       if (!productoActual) {
           return res.status(404).json({ error: 'Producto no encontrado' });
@@ -408,19 +365,22 @@ async function getImagen(req, res) {
       // Optimización: Usar ETags para caché
       const etagFromClient = req.headers['if-none-match'];
       
-      // Generar ETag basado en fecha de actualización y parámetros
+      // Generar ETag basado en fecha de actualización y parámetros de imagen
       const etag = `W/"img-${id}-${productoActual.updatedAt}-${quality}-${width || 'auto'}-${height || 'auto'}"`;
       
-      // Si el cliente envió un ETag que coincide, responder 304
+      // Si el cliente envió un ETag que coincide, responder con 304 Not Modified
       if (etagFromClient === etag) {
           return res.status(304).end();
       }
       
+      // Validar que la calidad esté entre 1 y 100
+      const webpQuality = Math.max(1, Math.min(100, parseInt(quality) || 80));
+      
       try {
-        // Obtener la imagen
+        // Intentar obtener la imagen, capturando específicamente el error de "no tiene imagen"
         const imagen = await productoLogic.getImagen(id);
         
-        // Proceso optimizado con sharp
+        // Usar sharp para convertir la imagen a formato WebP
         const sharp = require('sharp');
         let sharpInstance = sharp(imagen);
         
@@ -429,45 +389,35 @@ async function getImagen(req, res) {
           sharpInstance = sharpInstance.resize({
             width: width ? parseInt(width) : null,
             height: height ? parseInt(height) : null,
-            fit: 'inside',
-            withoutEnlargement: true
+            fit: 'inside', // Mantiene la relación de aspecto
+            withoutEnlargement: true // No aumenta el tamaño si la imagen es más pequeña
           });
         }
         
-        // Convertir a WebP con calidad optimizada
-        const webpQuality = Math.max(1, Math.min(100, parseInt(quality) || 80));
+        // Convertir a WebP con la calidad especificada
         const webpImage = await sharpInstance
           .webp({ quality: webpQuality })
           .toBuffer();
         
-        // Configurar headers para la imagen
-        const headers = {
-          'Content-Type': 'image/webp',
-          'ETag': etag,
-          'Cache-Control': 'public, max-age=86400' // 1 día
-        };
-        
-        // Guardar respuesta en caché
-        cacheService.productos.set(cacheKey, {
-          headers,
-          data: webpImage
-        }, 3600); // Caché por 1 hora
-        
-        // Establecer headers
-        Object.entries(headers).forEach(([key, value]) => {
-          res.set(key, value);
-        });
-        
+        // Configurar los headers para la imagen WebP
+        res.set('Content-Type', 'image/webp');
+        // Agregar cache-control para mejor rendimiento
+        res.set('ETag', etag);
+        res.set('Cache-Control', 'public, max-age=86400'); // 1 día
         return res.send(webpImage);
         
       } catch (error) {
+        // Si el error es específicamente que el producto no tiene imagen, 
+        // devolvemos un estado 204 (No Content) en lugar de un error
         if (error.message === 'El producto no tiene una imagen') {
           return res.status(204).end();
         }
+        
+        // Para otros errores, seguimos lanzando la excepción
         throw error;
       }
     } catch (error) {
-      console.error('Error al obtener imagen:', error);
+      console.error('Error al obtener imagen del producto:', error);
       return res.status(error.message === 'Producto no encontrado' ? 404 : 500).json({ 
         success: false, 
         message: error.message 
@@ -475,13 +425,13 @@ async function getImagen(req, res) {
     }
 }
 
-// Controlador optimizado para obtener imagen en formato base64
+// Controlador para obtener imagen en formato base64
 async function getImagenBase64(req, res) {
     try {
       const { id } = req.params;
       
-      // Verificar si el producto existe con consulta ligera
-      const productoActual = await productoLogic.obtenerPorIdLigero(id);
+      // Verificar si el producto existe y pertenece a la sección del usuario
+      const productoActual = await productoLogic.obtenerPorId(id);
       if (!productoActual) {
           return res.status(404).json({ error: 'Producto no encontrado' });
       }
@@ -497,9 +447,6 @@ async function getImagenBase64(req, res) {
       try {
         // Intentar obtener la imagen en formato base64
         const base64Image = await productoLogic.getImagenBase64(id);
-        
-        // Configurar caché para la respuesta
-        res.set('Cache-Control', 'private, max-age=3600'); // 1 hora
         
         // Devolver la imagen en formato JSON con el base64
         return res.status(200).json({ 
@@ -529,13 +476,13 @@ async function getImagenBase64(req, res) {
     }
 }
   
-// Controlador optimizado para eliminar imagen
+// Controlador para eliminar una imagen
 async function deleteImagen(req, res) {
     try {
       const { id } = req.params;
       
-      // Verificar si el producto existe (versión ligera)
-      const productoActual = await productoLogic.obtenerPorIdLigero(id);
+      // Verificar si el producto existe y pertenece a la sección del usuario
+      const productoActual = await productoLogic.obtenerPorId(id);
       if (!productoActual) {
           return res.status(404).json({ error: 'Producto no encontrado' });
       }
@@ -560,12 +507,12 @@ async function deleteImagen(req, res) {
     }
 }
 
-// Controlador optimizado para calcular precio total de un combo
+// Nuevo controlador para calcular precio total de un combo
 async function calcularPrecioCombo(req, res) {
     try {
         const { id } = req.params;
         
-        // Verificar si el producto existe
+        // Verificar si el producto existe y es un combo
         const producto = await productoLogic.obtenerPorId(id);
         if (!producto) {
             return res.status(404).json({ error: 'Producto no encontrado' });
@@ -600,7 +547,6 @@ async function calcularPrecioCombo(req, res) {
     }
 }
 
-// Exportar todas las funciones del controlador
 module.exports = {
     obtenerTodos,
     obtenerPorId,
