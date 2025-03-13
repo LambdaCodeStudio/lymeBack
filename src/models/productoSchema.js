@@ -33,7 +33,7 @@ const productoSchema = new mongoose.Schema({
     required: true, 
     enum: ['accesorios','aerosoles','bolsas','estandar','indumentaria','liquidos','papeles',
            'sinClasificarLimpieza','iluminaria','electricidad','cerraduraCortina','pintura',
-           'superficiesConstruccion','plomeria', 'calzado'] 
+           'superficiesConstruccion', 'sinClasificarMantenimiento','plomeria', 'calzado'] 
   },
   precio: { 
     type: Number, 
