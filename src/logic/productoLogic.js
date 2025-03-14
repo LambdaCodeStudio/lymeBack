@@ -20,94 +20,11 @@ function invalidarCachePorClave(key) {
     productoCache.del(key);
 }
 
-// Función para obtener productos paginados y filtrados
-async function obtenerProductosPaginados(query = {}, page = 1, limit = 20, userSeccion = null) {
-    // Generar clave de caché única
-    const cacheKey = `productos_${JSON.stringify(query)}_${page}_${limit}_${userSeccion || 'all'}`;
-    
-    // Verificar si tenemos estos datos en caché
-    const cachedData = productoCache.get(cacheKey);
-    if (cachedData) {
-        console.log(`Cache hit para ${cacheKey}`);
-        return cachedData;
-    }
-    
-    console.log(`Cache miss para ${cacheKey}, consultando base de datos`);
-    
-    const skip = (page - 1) * limit;
-    
-    // Filtrar automáticamente por sección del usuario si es necesario
-    if (userSeccion && userSeccion !== 'ambos' && !query.categoria) {
-        query.categoria = userSeccion;
-    }
-    
-    // Proyección para seleccionar solo los campos necesarios
-    const projection = {
-        nombre: 1,
-        descripcion: 1, 
-        categoria: 1,
-        subCategoria: 1,
-        precio: 1,
-        stock: 1,
-        vendidos: 1,
-        esCombo: 1,
-        'itemsCombo.productoId': 1,
-        'itemsCombo.cantidad': 1,
-        updatedAt: 1,
-        createdAt: 1
-    };
-    
-    // Ejecutar consultas en paralelo para mejor rendimiento
-    const [productos, totalItems] = await Promise.all([
-        Producto.find(query, projection)
-            .populate({
-                path: 'itemsCombo.productoId',
-                select: 'nombre precio' // Solo los campos necesarios
-            })
-            .sort({ nombre: 1 }) // Ordenar por nombre
-            .skip(skip)
-            .limit(limit)
-            .lean(), // Usar lean() para mejor rendimiento
-            
-        Producto.countDocuments(query)
-    ]);
-    
-    // Verificar qué productos tienen imágenes (sin cargar los bytes)
-    const productIds = productos.map(p => p._id);
-    const productsWithImages = await Producto.find(
-        { _id: { $in: productIds }, imagen: { $exists: true, $ne: null } },
-        { _id: 1 }
-    ).lean();
-    
-    // Crear mapa para seguimiento rápido
-    const hasImageMap = new Map();
-    productsWithImages.forEach(p => {
-        hasImageMap.set(p._id.toString(), true);
-    });
-    
-    // Añadir flag hasImage a cada producto
-    const enhancedProducts = productos.map(p => ({
-        ...p,
-        hasImage: hasImageMap.has(p._id.toString())
-    }));
-    
-    // Preparar respuesta con metadatos de paginación
-    const result = {
-        items: enhancedProducts,
-        page,
-        limit,
-        totalItems,
-        totalPages: Math.ceil(totalItems / limit),
-        hasNextPage: page < Math.ceil(totalItems / limit),
-        hasPrevPage: page > 1
-    };
-    
-    // Guardar en caché
-    productoCache.set(cacheKey, result);
-    
-    return result;
+async function obtenerTodos(userSeccion = null) {
+    return (await obtenerProductosPaginados({}, 1, 1000, userSeccion)).items;
 }
 
+// Obtener un producto por ID
 async function obtenerPorId(id) {
     // Clave de caché para el producto individual
     const cacheKey = `producto_${id}`;
@@ -140,12 +57,6 @@ async function obtenerPorIdLigero(id) {
     }).lean();
 }
 
-// Versión antigua para compatibilidad
-async function obtenerTodos(userSeccion = null) {
-    return (await obtenerProductosPaginados({}, 1, 1000, userSeccion)).items;
-}
-
-// Versión antigua para compatibilidad
 async function obtenerProductosPorSeccion(seccion) {
     let query = {};
     
@@ -155,6 +66,115 @@ async function obtenerProductosPorSeccion(seccion) {
     
     return (await obtenerProductosPaginados(query, 1, 1000, seccion)).items;
 }
+
+// Función para obtener productos paginados y filtrados
+async function obtenerProductosPaginados(query = {}, page = 1, limit = 20, userSeccion = null) {
+    // Verificar si debemos filtrar por productos sin stock (prioridad más alta)
+    if (query.noStock === 'true' || query.noStock === true) {
+      // Eliminar parámetro de filtrado que ya hemos procesado
+      delete query.noStock;
+      
+      // Añadir condición de stock exactamente cero
+      query.stock = 0;
+    }
+    // Verificar si debemos filtrar por stock bajo (segunda prioridad)
+    else if (query.lowStock === 'true' || query.lowStock === true) {
+      // Obtener umbral desde query, por defecto 10
+      const threshold = parseInt(query.threshold) || 10;
+      
+      // Eliminar parámetros de filtrado que ya hemos procesado
+      delete query.lowStock;
+      delete query.threshold;
+      
+      // Añadir condición de stock bajo a la query
+      query.stock = { $lte: threshold, $gt: 0 };
+    }
+    
+    // Generar clave de caché única
+    const cacheKey = `productos_${JSON.stringify(query)}_${page}_${limit}_${userSeccion || 'all'}`;
+    
+    // Verificar si tenemos estos datos en caché
+    const cachedData = productoCache.get(cacheKey);
+    if (cachedData) {
+      console.log(`Cache hit para ${cacheKey}`);
+      return cachedData;
+    }
+    
+    console.log(`Cache miss para ${cacheKey}, consultando base de datos`);
+    
+    const skip = (page - 1) * limit;
+    
+    // Filtrar automáticamente por sección del usuario si es necesario
+    if (userSeccion && userSeccion !== 'ambos' && !query.categoria) {
+      query.categoria = userSeccion;
+    }
+    
+    // Proyección para seleccionar solo los campos necesarios
+    const projection = {
+      nombre: 1,
+      descripcion: 1, 
+      categoria: 1,
+      subCategoria: 1,
+      precio: 1,
+      stock: 1,
+      vendidos: 1,
+      esCombo: 1,
+      'itemsCombo.productoId': 1,
+      'itemsCombo.cantidad': 1,
+      updatedAt: 1,
+      createdAt: 1
+    };
+    
+    // Ejecutar consultas en paralelo para mejor rendimiento
+    const [productos, totalItems] = await Promise.all([
+      Producto.find(query, projection)
+        .populate({
+          path: 'itemsCombo.productoId',
+          select: 'nombre precio' // Solo los campos necesarios
+        })
+        .sort({ nombre: 1 }) // Ordenar por nombre
+        .skip(skip)
+        .limit(limit)
+        .lean(), // Usar lean() para mejor rendimiento
+        
+      Producto.countDocuments(query)
+    ]);
+    
+    // Verificar qué productos tienen imágenes (sin cargar los bytes)
+    const productIds = productos.map(p => p._id);
+    const productsWithImages = await Producto.find(
+      { _id: { $in: productIds }, imagen: { $exists: true, $ne: null } },
+      { _id: 1 }
+    ).lean();
+    
+    // Crear mapa para seguimiento rápido
+    const hasImageMap = new Map();
+    productsWithImages.forEach(p => {
+      hasImageMap.set(p._id.toString(), true);
+    });
+    
+    // Añadir flag hasImage a cada producto
+    const enhancedProducts = productos.map(p => ({
+      ...p,
+      hasImage: hasImageMap.has(p._id.toString())
+    }));
+    
+    // Preparar respuesta con metadatos de paginación
+    const result = {
+      items: enhancedProducts,
+      page,
+      limit,
+      totalItems,
+      totalPages: Math.ceil(totalItems / limit),
+      hasNextPage: page < Math.ceil(totalItems / limit),
+      hasPrevPage: page > 1
+    };
+    
+    // Guardar en caché
+    productoCache.set(cacheKey, result);
+    
+    return result;
+  }
 
 async function crearProducto(datos) {
     // Si es un combo, validar los productos incluidos

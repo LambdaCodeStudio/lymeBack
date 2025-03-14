@@ -17,8 +17,13 @@ const { createInitialAdmin } = require('./controllers/auth');
 const app = express();
 
 // IMPORTANTE: Configurar Express para confiar en el proxy (para Vercel)
-// Esto resuelve el error de express-rate-limit
-app.set('trust proxy', true);
+if (process.env.NODE_ENV === 'production') {
+  // En producción, confiar solo en el primer proxy (apropiado para Vercel)
+  app.set('trust proxy', 1);
+} else {
+  // En desarrollo, podemos ser menos estrictos
+  app.set('trust proxy', 'loopback');
+}
 
 // Middlewares básicos
 app.use(cors(corsOptions));
@@ -57,7 +62,9 @@ const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 200,
   standardHeaders: true,
-  legacyHeaders: false
+  legacyHeaders: false,
+  // Desactivar la validación si continúa el error
+  validate: { trustProxy: false }
 });
 app.use(limiter);
 
@@ -210,7 +217,7 @@ app.use((req, res) => {
 });
 
 // Iniciar el servidor solo en desarrollo
-if (process.env.NODE_ENV !== 'production') {
+if (process.env.NODE_ENV == 'production') {
   const PORT = process.env.PORT || 4000;
   app.listen(PORT, () => console.log(`Servidor en puerto ${PORT}`));
 }

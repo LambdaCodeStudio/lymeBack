@@ -24,4 +24,7 @@ router.delete('/:id/imagen', productoController.deleteImagen);
 router.post('/:id/imagen-base64', productoController.uploadImagenBase64);
 router.get('/:id/imagen-base64', productoController.getImagenBase64);
 
+//Rutas de stock bajo
+router.get('/stats/lowstock', productoController.getStockStats);
+
 module.exports = router;

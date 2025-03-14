@@ -3,50 +3,66 @@ const productoLogic = require('../logic/productoLogic');
 
 async function obtenerTodos(req, res) {
     try {
-        // Implementar paginación
-        const page = parseInt(req.query.page) || 1;
-        const limit = parseInt(req.query.limit) || 20;
-        
-        // Obtener parámetros de filtrado
-        const searchTerm = req.query.search || '';
-        const category = req.query.category || '';
-        
-        // Obtener sección del usuario desde el token de autenticación
-        const userSeccion = req.user ? req.user.secciones : null;
-        
-        // Construir filtro base
-        let query = {};
+      // Implementar paginación
+      const page = parseInt(req.query.page) || 1;
+      const limit = parseInt(req.query.limit) || 20;
+      
+      // Obtener parámetros de filtrado
+      const searchTerm = req.query.search || '';
+      const category = req.query.category || '';
+      
+      // Nuevos parámetros para stock bajo y sin stock
+      const showLowStock = req.query.lowStock === 'true';
+      const showNoStock = req.query.noStock === 'true';
+      const threshold = parseInt(req.query.threshold) || 10;
+      
+      // Obtener sección del usuario desde el token de autenticación
+      const userSeccion = req.user ? req.user.secciones : null;
+      
+      // Construir filtro base
+      let query = {};
+      
+      // Priorizar filtros de stock sobre otros filtros
+      if (showNoStock) {
+        // Filtro para productos con stock = 0
+        query.stock = 0;
+      } else if (showLowStock) {
+        // Filtro para productos con stock bajo (menor o igual al umbral, pero mayor que 0)
+        query.stock = { $lte: threshold, $gt: 0 };
+      } else {
+        // Aplicar filtros normales cuando no se filtran por stock
         
         // Filtrar por categoría si se especifica
         if (category && category !== 'all') {
-            query.categoria = category;
+          query.categoria = category;
         } else if (userSeccion && userSeccion !== 'ambos') {
-            query.categoria = userSeccion;
+          query.categoria = userSeccion;
         }
         
         // Filtrar por término de búsqueda
         if (searchTerm) {
-            query.$or = [
-                { nombre: { $regex: searchTerm, $options: 'i' } },
-                { descripcion: { $regex: searchTerm, $options: 'i' } },
-                { proovedorInfo: { $regex: searchTerm, $options: 'i' } }
-            ];
+          query.$or = [
+            { nombre: { $regex: searchTerm, $options: 'i' } },
+            { descripcion: { $regex: searchTerm, $options: 'i' } },
+            { proovedorInfo: { $regex: searchTerm, $options: 'i' } }
+          ];
         }
-        
-        // Obtener productos con paginación y filtros
-        const result = await productoLogic.obtenerProductosPaginados(
-            query, 
-            page, 
-            limit, 
-            userSeccion
-        );
-        
-        res.json(result);
+      }
+      
+      // Obtener productos con paginación y filtros
+      const result = await productoLogic.obtenerProductosPaginados(
+        query, 
+        page, 
+        limit, 
+        userSeccion
+      );
+      
+      res.json(result);
     } catch (error) {
-        console.error('Error en obtenerTodos:', error);
-        res.status(500).json({ error: 'Error al obtener los productos' });
+      console.error('Error en obtenerTodos:', error);
+      res.status(500).json({ error: 'Error al obtener los productos' });
     }
-}
+  }
 
 async function obtenerPorId(req, res) {
     try {
@@ -547,6 +563,23 @@ async function calcularPrecioCombo(req, res) {
     }
 }
 
+async function getStockStats(req, res) {
+    try {
+      // Obtener el umbral desde query params, por defecto 10
+      const threshold = parseInt(req.query.threshold) || 10;
+      
+      // Consultar productos con stock bajo
+      const count = await Producto.countDocuments({ 
+        stock: { $lte: threshold, $gt: 0 } 
+      });
+      
+      res.json({ count });
+    } catch (error) {
+      console.error('Error al obtener estadísticas de stock:', error);
+      res.status(500).json({ error: 'Error al obtener estadísticas de stock' });
+    }
+  }
+
 module.exports = {
     obtenerTodos,
     obtenerPorId,
@@ -560,5 +593,6 @@ module.exports = {
     deleteImagen,
     uploadImagenBase64,
     getImagenBase64,
-    calcularPrecioCombo
+    calcularPrecioCombo,
+    getStockStats
 };

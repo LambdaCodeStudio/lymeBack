@@ -8,7 +8,8 @@ const {
   deleteUser,
   getCurrentUser,
   toggleUserStatus,
-  reactivateTemporaryOperator
+  reactivateTemporaryOperator,
+  getSupervisors
 } = require('../controllers/auth');
 const auth = require('../middleware/auth');
 const { isAdmin, isOnlyAdmin, hasRole } = require('../middleware/roleMiddleware');
