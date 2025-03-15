@@ -6,8 +6,6 @@ const helmet = require('helmet');
 const mongoose = require('mongoose');
 const mongoSanitize = require('express-mongo-sanitize');
 const cookieParser = require('cookie-parser');
-// Recomendamos eliminar express-session si no es necesario para tu aplicación
-// const session = require('express-session');
 const rateLimit = require('express-rate-limit');
 const hpp = require('hpp');
 const compression = require('compression');
@@ -58,15 +56,13 @@ app.use(mongoSanitize());
 app.use(hpp());
 
 // Rate Limiting configurado para funcionar en entornos con proxy (como Vercel)
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 200,
-  standardHeaders: true,
-  legacyHeaders: false,
-  // Desactivar la validación si continúa el error
-  validate: { trustProxy: false }
-});
-app.use(limiter);
+// const limiter = rateLimit({
+//   windowMs: 15 * 60 * 1000,
+//   max: 200,
+//   standardHeaders: true,
+//   legacyHeaders: false
+// });
+// app.use(limiter);
 
 /* Recomendamos eliminar la configuración de sesión si no la estás usando
 // Configuración de sesión - ADAPTADA PARA VERCEL
