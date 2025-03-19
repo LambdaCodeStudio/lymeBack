@@ -24,7 +24,6 @@ async function obtenerSiguienteNumero(nombreColeccion) {
     return contador.secuencia;
 }
 
-// Esquema de Pedido modificado
 const pedidoSchema = new mongoose.Schema({
     nPedido: {
         type: Number,
@@ -61,6 +60,11 @@ const pedidoSchema = new mongoose.Schema({
     detalle:{
         type: String,
         default: ' '
+    },
+    estado: {
+        type: String,
+        enum: ['pendiente', 'aprobado', 'rechazado'],
+        default: 'pendiente'
     }
 });
 

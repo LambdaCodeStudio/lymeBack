@@ -47,6 +47,19 @@ exports.getPedidosByFecha = async (req, res) => {
     }
 };
 
+exports.getPedidosByEstado = async (req, res) => {
+    try {
+        const pedidos = await pedidoLogic.obtenerPedidosPorEstado(req.params.estado);
+        res.json(pedidos);
+    } catch (error) {
+        console.error('Error al obtener pedidos por estado:', error);
+        res.status(500).json({ 
+            mensaje: 'Error al obtener pedidos por estado', 
+            error: error.message 
+        });
+    }
+};
+
 exports.createPedido = async (req, res) => {
     try {
         const pedido = await pedidoLogic.crearPedido(req.body);

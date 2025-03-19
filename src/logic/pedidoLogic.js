@@ -2,20 +2,22 @@ const { Pedido } = require('../models/pedidoSchema');
 const productoLogic = require('../logic/productoLogic'); // Importamos la lógica de productos
 
 const obtenerPedidos = async () => {
-    return await Pedido.find().populate('userId', 'nombre email').populate('productos.productoId');
+    return await Pedido.find()
+        .populate('userId', 'nombre email usuario apellido role') // Añadir campos necesarios
+        .populate('productos.productoId');
 };
 
 const obtenerPedidoPorId = async (id) => {
     return await Pedido.findById(id)
       .populate({
         path: 'userId',
-        select: 'nombre email'
+        select: 'nombre email usuario apellido role'
       })
       .populate({
         path: 'productos.productoId',
         select: 'nombre precio descripcion categoria'
       });
-  };
+};
 
 const obtenerPedidosPorUserId = async (userId) => {
     return await Pedido.find({ userId }).populate('userId', 'nombre email').populate('productos.productoId');
@@ -23,6 +25,13 @@ const obtenerPedidosPorUserId = async (userId) => {
 
 const obtenerPedidosPorServicio = async (servicio) => {
     return await Pedido.find({ servicio }).populate('userId', 'nombre email').populate('productos.productoId');
+};
+
+const obtenerPedidosPorEstado = async (estado) => {
+    return await Pedido.find({ estado })
+        .populate('userId', 'nombre email usuario')
+        .populate('productos.productoId')
+        .sort({ fecha: -1 });
 };
 
 const obtenerPedidosPorRangoDeFechas = async (fechaInicio, fechaFin) => {
@@ -233,5 +242,6 @@ module.exports = {
     actualizarPedido,
     eliminarPedido,
     obtenerPedidosOrdenados,
-    obtenerPedidosPorClienteId
+    obtenerPedidosPorClienteId,
+    obtenerPedidosPorEstado
 };

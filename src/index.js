@@ -58,15 +58,15 @@ app.use(mongoSanitize());
 app.use(hpp());
 
 // Rate Limiting configurado para funcionar en entornos con proxy (como Vercel)
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 200,
-  standardHeaders: true,
-  legacyHeaders: false,
-  // Desactivar la validación si continúa el error
-  validate: { trustProxy: false }
-});
-app.use(limiter);
+// const limiter = rateLimit({
+//   windowMs: 15 * 60 * 1000,
+//   max: 200,
+//   standardHeaders: true,
+//   legacyHeaders: false,
+//   // Desactivar la validación si continúa el error
+//   validate: { trustProxy: false }
+// });
+// app.use(limiter);
 
 /* Recomendamos eliminar la configuración de sesión si no la estás usando
 // Configuración de sesión - ADAPTADA PARA VERCEL
