@@ -60,7 +60,13 @@ app.use(hpp());
 //   windowMs: 15 * 60 * 1000,
 //   max: 200,
 //   standardHeaders: true,
+<<<<<<< HEAD
 //   legacyHeaders: false
+=======
+//   legacyHeaders: false,
+//   // Desactivar la validación si continúa el error
+//   validate: { trustProxy: false }
+>>>>>>> main
 // });
 // app.use(limiter);
 

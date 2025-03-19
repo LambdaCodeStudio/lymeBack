@@ -9,6 +9,7 @@ router.get('/', pedidoController.getPedidos);
 // Rutas específicas - IMPORTANTE: deben ir ANTES de las rutas con parámetros variables
 router.get('/fecha', pedidoController.getPedidosByFecha);
 router.get('/ordenados', pedidoController.getPedidosOrdenados);
+router.get('/estado/:estado', pedidoController.getPedidosByEstado);
 
 // Rutas con parámetros variables
 router.get('/user/:userId', pedidoController.getPedidosByUserId);
