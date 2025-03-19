@@ -1,4 +1,5 @@
 // src/controllers/pedidoController.js
+const { Pedido } = require('../models/pedidoSchema');
 const pedidoLogic = require('../logic/pedidoLogic');
 const mongoose = require('mongoose');
 
@@ -117,7 +118,6 @@ exports.getPedidosBySupervisorId = async (req, res) => {
             select: 'nombre subServicios',
             populate: {
                 path: 'subServicios',
-                match: { _id: { $eq: mongoose.Types.ObjectId('$cliente.subServicioId') } },
                 populate: { path: 'supervisorId' }
             }
         })

@@ -411,15 +411,15 @@ async function getImagen(req, res) {
       // Verificar si el producto existe y pertenece a la sección del usuario
       const productoActual = await productoLogic.obtenerPorIdLigero(id);
       if (!productoActual) {
-          return res.status(404).json({ error: 'Producto no encontrado' });
+        return res.status(404).json({ error: 'Producto no encontrado' });
       }
       
       // Verificar permisos de sección
       const userSeccion = req.user ? req.user.secciones : null;
       if (userSeccion && userSeccion !== 'ambos' && productoActual.categoria !== userSeccion) {
-          return res.status(403).json({ 
-              error: 'No tiene permisos para ver productos de esta categoría' 
-          });
+        return res.status(403).json({ 
+          error: 'No tiene permisos para ver productos de esta categoría' 
+        });
       }
       
       // Optimización: Usar ETags para caché
@@ -430,42 +430,55 @@ async function getImagen(req, res) {
       
       // Si el cliente envió un ETag que coincide, responder con 304 Not Modified
       if (etagFromClient === etag) {
-          return res.status(304).end();
+        return res.status(304).end();
       }
       
-      // Validar que la calidad esté entre 1 y 100
-      const webpQuality = Math.max(1, Math.min(100, parseInt(quality) || 80));
-      
       try {
-        // Intentar obtener la imagen, capturando específicamente el error de "no tiene imagen"
-        const imagen = await productoLogic.getImagen(id);
+        // Intentar obtener la imagen como buffer
+        let imagenBuffer = await productoLogic.getImagen(id);
         
-        // Usar sharp para convertir la imagen a formato WebP
-        const sharp = require('sharp');
-        let sharpInstance = sharp(imagen);
-        
-        // Redimensionar si se especifican width o height
-        if (width || height) {
-          sharpInstance = sharpInstance.resize({
-            width: width ? parseInt(width) : null,
-            height: height ? parseInt(height) : null,
-            fit: 'inside', // Mantiene la relación de aspecto
-            withoutEnlargement: true // No aumenta el tamaño si la imagen es más pequeña
-          });
+        // Si tenemos Sharp, procesar la imagen
+        if (imagenBuffer) {
+          try {
+            // Validar que la calidad esté entre 1 y 100
+            const webpQuality = Math.max(1, Math.min(100, parseInt(quality) || 80));
+            
+            // Usar sharp para convertir la imagen a formato WebP
+            const sharp = require('sharp');
+            let sharpInstance = sharp(imagenBuffer);
+            
+            // Redimensionar si se especifican width o height
+            if (width || height) {
+              sharpInstance = sharpInstance.resize({
+                width: width ? parseInt(width) : null,
+                height: height ? parseInt(height) : null,
+                fit: 'inside', // Mantiene la relación de aspecto
+                withoutEnlargement: true // No aumenta el tamaño si la imagen es más pequeña
+              });
+            }
+            
+            // Convertir a WebP con la calidad especificada
+            const webpImage = await sharpInstance
+              .webp({ quality: webpQuality })
+              .toBuffer();
+            
+            // Configurar los headers para la imagen WebP
+            res.set('Content-Type', 'image/webp');
+            // Agregar cache-control para mejor rendimiento
+            res.set('ETag', etag);
+            res.set('Cache-Control', 'public, max-age=86400'); // 1 día
+            return res.send(webpImage);
+          } catch (sharpError) {
+            console.error('Error al procesar imagen con Sharp:', sharpError);
+            // Si falla Sharp, enviamos la imagen original sin procesar
+            res.set('Content-Type', 'image/jpeg');
+            res.set('ETag', etag);
+            res.set('Cache-Control', 'public, max-age=86400');
+            return res.send(imagenBuffer);
+          }
+        } else {
+          throw new Error('No se pudo obtener la imagen');
         }
-        
-        // Convertir a WebP con la calidad especificada
-        const webpImage = await sharpInstance
-          .webp({ quality: webpQuality })
-          .toBuffer();
-        
-        // Configurar los headers para la imagen WebP
-        res.set('Content-Type', 'image/webp');
-        // Agregar cache-control para mejor rendimiento
-        res.set('ETag', etag);
-        res.set('Cache-Control', 'public, max-age=86400'); // 1 día
-        return res.send(webpImage);
-        
       } catch (error) {
         // Si el error es específicamente que el producto no tiene imagen, 
         // devolvemos un estado 204 (No Content) en lugar de un error
@@ -483,7 +496,7 @@ async function getImagen(req, res) {
         message: error.message 
       });
     }
-}
+  }
 
 // Función para obtener imagen en formato base64
 async function getImagenBase64(req, res) {

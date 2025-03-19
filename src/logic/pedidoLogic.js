@@ -178,13 +178,13 @@ const obtenerPedidosPorProducto = async (productoId, opciones = {}) => {
 const obtenerPedidosPorCliente = async (clienteId, subServicioId = null, subUbicacionId = null, opciones = {}) => {
     const { limit = 50, skip = 0, sort = { fecha: -1 } } = opciones;
     
-    const filtro = { 'cliente.clienteId': mongoose.Types.ObjectId(clienteId) };
+    const filtro = { 'cliente.clienteId': new mongoose.Types.ObjectId(clienteId) };
     
     if (subServicioId) {
-        filtro['cliente.subServicioId'] = mongoose.Types.ObjectId(subServicioId);
+        filtro['cliente.subServicioId'] = new mongoose.Types.ObjectId(subServicioId);
         
         if (subUbicacionId) {
-            filtro['cliente.subUbicacionId'] = mongoose.Types.ObjectId(subUbicacionId);
+            filtro['cliente.subUbicacionId'] = new mongoose.Types.ObjectId(subUbicacionId);
         }
     }
     

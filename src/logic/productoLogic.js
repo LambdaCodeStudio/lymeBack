@@ -771,87 +771,139 @@ async function updateImagen(productoId, imageBuffer) {
 // Función para actualizar imagen en formato base64
 async function updateImagenBase64(productoId, base64String) {
     try {
-        const producto = await Producto.findById(productoId);
-        
-        if (!producto) {
-            throw new Error('Producto no encontrado');
+      const producto = await Producto.findById(productoId);
+      
+      if (!producto) {
+        throw new Error('Producto no encontrado');
+      }
+      
+      // Verificar que sea un formato base64 válido
+      if (!base64String || typeof base64String !== 'string') {
+        throw new Error('Formato de imagen inválido');
+      }
+      
+      // Guardar el formato original para debugging
+      const originalFormat = base64String.substring(0, 50) + '...';
+      
+      // Extraer la parte de datos del base64 si tiene el formato data:image
+      let base64Data = base64String;
+      let mimetype = 'image/png'; // Por defecto
+      
+      if (base64String.startsWith('data:')) {
+        const matches = base64String.match(/^data:([a-zA-Z0-9/+.-]+);base64,(.+)$/);
+        if (matches && matches.length === 3) {
+          mimetype = matches[1];
+          base64Data = matches[2];
+        } else {
+          console.warn('Formato base64 no estándar:', originalFormat);
+          // Intentar extraer solo la parte de datos si tiene el formato específico
+          const dataPosition = base64String.indexOf(',');
+          if (dataPosition > 0) {
+            base64Data = base64String.substring(dataPosition + 1);
+          }
         }
-        
-        // Verificar que sea un formato base64 válido
-        if (!base64String || typeof base64String !== 'string') {
-            throw new Error('Formato de imagen inválido');
-        }
-        
-        // Extraer la parte de datos del base64 si tiene el formato data:image
-        let base64Data = base64String;
-        let mimetype = 'image/png'; // Por defecto
-        
-        if (base64String.startsWith('data:image/')) {
-            const matches = base64String.match(/^data:image\/([a-zA-Z0-9+/]+);base64,(.+)$/);
-            if (matches && matches.length === 3) {
-                mimetype = `image/${matches[1]}`;
-                base64Data = matches[2];
-            } else {
-                throw new Error('Formato base64 inválido');
-            }
-        }
-        
-        // Convertir base64 a buffer para almacenamiento
+      }
+      
+      // Convertir base64 a buffer para almacenamiento
+      try {
         const imageBuffer = Buffer.from(base64Data, 'base64');
         
+        // Verificar que el buffer sea válido
+        if (imageBuffer.length === 0) {
+          throw new Error('Buffer de imagen inválido');
+        }
+        
+        // Almacenar en el formato requerido por MongoDB
         producto.imagen = imageBuffer;
         
-        // NUEVA FUNCIONALIDAD: Añadir metadatos de la imagen
+        // Guardar metadatos
         producto.imagenInfo = {
-            mimetype,
-            tamano: imageBuffer.length,
-            ultimaActualizacion: new Date()
+          mimetype,
+          tamano: imageBuffer.length,
+          ultimaActualizacion: new Date()
         };
         
+        // Guardar cambios
         await producto.save();
         
-        // Invalidar caché del producto específico
+        // Invalidar caché
         invalidarCachePorClave(`producto_${productoId}`);
         
-        return { success: true, message: 'Imagen base64 actualizada correctamente' };
+        return { 
+          success: true, 
+          message: 'Imagen base64 actualizada correctamente',
+          originalFormat,
+          size: imageBuffer.length
+        };
+      } catch (bufferError) {
+        console.error('Error al convertir base64 a buffer:', bufferError);
+        throw new Error('Error al procesar la imagen. Formato base64 inválido.');
+      }
     } catch (error) {
-        throw error;
+      console.error(`Error en updateImagenBase64 para producto ${productoId}:`, error);
+      throw error;
     }
-}
+  }
 
 // Función para obtener imagen
 async function getImagen(productoId) {
     try {
-        const producto = await Producto.findById(productoId).select('imagen imagenInfo');
-        
-        if (!producto) {
-            throw new Error('Producto no encontrado');
-        }
-        
-        if (!producto.imagen) {
-            throw new Error('El producto no tiene una imagen');
-        }
-        
+      const producto = await Producto.findById(productoId).select('imagen imagenInfo');
+      
+      if (!producto) {
+        throw new Error('Producto no encontrado');
+      }
+      
+      if (!producto.imagen) {
+        throw new Error('El producto no tiene una imagen');
+      }
+      
+      // Verificar diferentes formatos de imagen
+      if (Buffer.isBuffer(producto.imagen)) {
+        // Ya es un buffer, retornarlo directamente
         return producto.imagen;
+      } else if (producto.imagen.buffer) {
+        // Es un objeto con buffer (típico en MongoDB)
+        return producto.imagen.buffer;
+      } else if (typeof producto.imagen === 'string') {
+        // Es un string base64, convertirlo a buffer
+        if (producto.imagen.startsWith('data:')) {
+          // Extraer la parte de datos
+          const matches = producto.imagen.match(/^data:([a-zA-Z0-9/+.-]+);base64,(.+)$/);
+          if (matches && matches.length === 3) {
+            return Buffer.from(matches[2], 'base64');
+          }
+        }
+        
+        // Intentar convertir directamente
+        return Buffer.from(producto.imagen, 'base64');
+      }
+      
+      // Si llegamos aquí, intentamos una última conversión
+      console.warn('Formato de imagen no reconocido, intentando conversión genérica');
+      return Buffer.from(producto.imagen.toString(), 'binary');
     } catch (error) {
-        throw error;
+      console.error(`Error en getImagen para producto ${productoId}:`, error);
+      throw error;
     }
-}
+  }
 
 // Función para obtener imagen en formato base64
 async function getImagenBase64(productoId) {
     try {
-        const producto = await Producto.findById(productoId).select('imagen imagenInfo');
-        
-        if (!producto) {
-            throw new Error('Producto no encontrado');
-        }
-        
-        if (!producto.imagen) {
-            throw new Error('El producto no tiene una imagen');
-        }
-        
-        // Convertir buffer a base64
+      const producto = await Producto.findById(productoId).select('imagen imagenInfo');
+      
+      if (!producto) {
+        throw new Error('Producto no encontrado');
+      }
+      
+      if (!producto.imagen) {
+        throw new Error('El producto no tiene una imagen');
+      }
+      
+      // Verificar si la imagen ya es base64
+      if (producto.imagen && typeof producto.imagen.buffer !== 'undefined') {
+        // Es un Buffer, convertir a base64
         const base64Image = producto.imagen.toString('base64');
         
         // Usar el tipo MIME guardado o asumir PNG por defecto
@@ -862,10 +914,44 @@ async function getImagenBase64(productoId) {
         const base64String = `data:${mimetype};base64,${base64Image}`;
         
         return base64String;
+      } else if (typeof producto.imagen === 'string' && producto.imagen.startsWith('data:image')) {
+        // La imagen ya está en formato base64, devolverla directamente
+        return producto.imagen;
+      } else if (producto.imagen.buffer || Buffer.isBuffer(producto.imagen)) {
+        // Si es un buffer directo
+        const base64Image = Buffer.from(producto.imagen).toString('base64');
+        
+        // Usar el tipo MIME guardado o asumir PNG por defecto
+        const mimetype = producto.imagenInfo && producto.imagenInfo.mimetype
+            ? producto.imagenInfo.mimetype
+            : 'image/png';
+            
+        const base64String = `data:${mimetype};base64,${base64Image}`;
+        
+        return base64String;
+      } else {
+        // Intentar convertir desde Binary de MongoDB
+        try {
+          const binData = producto.imagen.buffer || producto.imagen;
+          const base64Image = Buffer.from(binData).toString('base64');
+          
+          const mimetype = producto.imagenInfo && producto.imagenInfo.mimetype
+              ? producto.imagenInfo.mimetype
+              : 'image/png';
+              
+          const base64String = `data:${mimetype};base64,${base64Image}`;
+          
+          return base64String;
+        } catch (conversionError) {
+          console.error('Error al convertir la imagen a base64:', conversionError);
+          throw new Error('No se pudo convertir la imagen a base64');
+        }
+      }
     } catch (error) {
-        throw error;
+      console.error(`Error en getImagenBase64 para producto ${productoId}:`, error);
+      throw error;
     }
-}
+  }
 
 // Función para eliminar imagen
 async function deleteImagen(productoId) {
