@@ -3,7 +3,7 @@ const express = require('express');
 const productoController = require('../controllers/productoController');
 const router = express.Router();
 const upload = require('../middleware/upload');
-const auth = require('../middleware/auth');
+const { auth } = require('../middleware/auth');
 const { isAdmin, hasRole } = require('../middleware/roleMiddleware');
 const ROLES = require('../constants/roles');
 

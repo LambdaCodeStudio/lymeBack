@@ -1,7 +1,7 @@
 // src/routes/pedidoRoutes.js
 const express = require('express');
 const pedidoController = require('../controllers/pedidoController');
-const auth = require('../middleware/auth'); // Asumiendo que existe un middleware de autenticación
+const { auth } = require('../middleware/auth'); // Asumiendo que existe un middleware de autenticación
 
 const router = express.Router();
 

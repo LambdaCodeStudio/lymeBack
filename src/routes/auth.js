@@ -13,7 +13,7 @@ const {
   reactivateTemporaryOperator,
   getSupervisors
 } = require('../controllers/auth');
-const auth = require('../middleware/auth');
+const { auth } = require('../middleware/auth');
 const { isAdmin, isOnlyAdmin, hasRole } = require('../middleware/roleMiddleware');
 const ROLES = require('../constants/roles');
 const { body, param, query } = require('express-validator');

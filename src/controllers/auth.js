@@ -433,7 +433,7 @@ const updateUser = async (req, res) => {
       });
     }
     
-    // Obtener usuario a actualizar
+    // Obtener usuario a actualizar - IMPORTANTE: Usar .session(session) en todas las consultas
     const user = await User.findById(req.params.id).session(session);
     if (!user) {
       await session.abortTransaction();
@@ -487,15 +487,17 @@ const updateUser = async (req, res) => {
     // Gestionar operario temporal
     if (user.role === ROLES.OPERARIO && updateData.isTemporary !== undefined) {
       if (updateData.isTemporary === true) {
+        // Usar minutos personalizados o por defecto 30 minutos
+        const expirationMinutes = updateData.expirationMinutes || 30;
         const expirationDate = new Date();
-        expirationDate.setMinutes(expirationDate.getMinutes() + 30);
+        expirationDate.setMinutes(expirationDate.getMinutes() + expirationMinutes);
         updateData.expiresAt = expirationDate;
       } else {
         updateData.expiresAt = null;
       }
     }
 
-    // Actualizar el usuario
+    // Actualizar el usuario - IMPORTANTE: Usar .session(session) aquí también
     const updatedUser = await User.findByIdAndUpdate(
       req.params.id,
       { $set: updateData },

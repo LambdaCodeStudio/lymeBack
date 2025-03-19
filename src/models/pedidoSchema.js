@@ -80,7 +80,8 @@ const pedidoSchema = new mongoose.Schema({
         required: true,
         index: true // Índice para filtrar por operario
     },
-    // Supervisor asignado al pedido (para filtros)
+    // Supervisor asignado al pedido
+    // NOTA: Ahora se puede obtener del subServicioId si existe, pero mantenemos para compatibilidad
     supervisorId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
@@ -135,21 +136,46 @@ const pedidoSchema = new mongoose.Schema({
     timestamps: true // Añade createdAt y updatedAt automáticamente
 });
 
-// Middleware pre-save para generar el número de pedido
+// Middleware pre-save para generar el número de pedido y obtener supervisor del subServicio
 pedidoSchema.pre('save', async function(next) {
-    // Si es un nuevo pedido, generar número secuencial
-    if (this.isNew) {
-        this.nPedido = await obtenerSiguienteNumero('pedidos');
-        
-        // Si el pedido tiene campos de cliente nuevos pero no los antiguos, rellenarlos
-        if (this.cliente && this.cliente.nombreCliente && !this.servicio) {
-            this.servicio = this.cliente.nombreCliente;
-            if (this.cliente.nombreSubServicio) {
-                this.seccionDelServicio = this.cliente.nombreSubServicio;
+    try {
+        // Si es un nuevo pedido, generar número secuencial
+        if (this.isNew) {
+            this.nPedido = await obtenerSiguienteNumero('pedidos');
+            
+            // Si el pedido tiene campos de cliente nuevos pero no los antiguos, rellenarlos
+            if (this.cliente && this.cliente.nombreCliente && !this.servicio) {
+                this.servicio = this.cliente.nombreCliente;
+                if (this.cliente.nombreSubServicio) {
+                    this.seccionDelServicio = this.cliente.nombreSubServicio;
+                }
+            }
+            
+            // Si hay un subServicioId pero no hay supervisorId, buscar si el subServicio tiene un supervisor asignado
+            if (this.cliente && this.cliente.subServicioId && !this.supervisorId) {
+                try {
+                    const Cliente = mongoose.model('Cliente');
+                    const cliente = await Cliente.findById(this.cliente.clienteId);
+                    
+                    if (cliente) {
+                        // Buscar el subServicio correspondiente
+                        const subServicio = cliente.subServicios.id(this.cliente.subServicioId);
+                        
+                        if (subServicio && subServicio.supervisorId) {
+                            // Asignar el supervisor del subServicio al pedido
+                            this.supervisorId = subServicio.supervisorId;
+                        }
+                    }
+                } catch (err) {
+                    console.error('Error al obtener supervisor de subServicio:', err);
+                    // Continuar sin asignar supervisor
+                }
             }
         }
+        next();
+    } catch (error) {
+        next(error);
     }
-    next();
 });
 
 // Índices compuestos para consultas frecuentes
@@ -205,7 +231,10 @@ pedidoSchema.statics.filtrarPorProducto = function(productoId) {
 
 pedidoSchema.statics.filtrarPorSupervisor = function(supervisorId) {
     return this.find({
-        supervisorId: supervisorId
+        $or: [
+            { supervisorId: supervisorId },
+            { 'cliente.subServicioId': { $exists: true } }
+        ]
     }).sort({ fecha: -1 });
 };
 

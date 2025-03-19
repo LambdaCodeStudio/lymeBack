@@ -3,220 +3,202 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
-const mongoose = require('mongoose');
-const mongoSanitize = require('express-mongo-sanitize');
 const cookieParser = require('cookie-parser');
-const rateLimit = require('express-rate-limit');
-const hpp = require('hpp');
 const compression = require('compression');
+const NodeCache = require('node-cache');
+
+// Importar configuraciones y servicios optimizados
 const corsOptions = require('./config/cors');
+const { connectDB, ensureDbConnection } = require('./config/db');
 const { createInitialAdmin } = require('./controllers/auth');
 
+// Importar middleware de seguridad
+const { 
+  securityBundle, 
+  apiLimiter, 
+  authLimiter 
+} = require('./middleware/security');
+
+// Crear app Express
 const app = express();
 
-// IMPORTANTE: Configurar Express para confiar en el proxy (para Vercel)
+// Establecer caché global
+global.cache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
+
+// ===== CONFIGURACIONES BÁSICAS =====
+
+// Configurar Express para entornos con proxy (como Vercel)
 if (process.env.NODE_ENV === 'production') {
-  // En producción, confiar solo en el primer proxy (apropiado para Vercel)
+  // En producción, confiar solo en el primer proxy
   app.set('trust proxy', 1);
 } else {
-  // En desarrollo, podemos ser menos estrictos
+  // En desarrollo, configuración más flexible
   app.set('trust proxy', 'loopback');
 }
 
-// Middlewares básicos
+// ===== MIDDLEWARE DE PRIMERA LÍNEA =====
+// (Estos middleware se ejecutan antes para cada solicitud)
+
+// CORS - Control de acceso de origen cruzado
 app.use(cors(corsOptions));
+
+// Parsers para diferentes formatos de solicitud
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
 
-// Compresión para reducir el tamaño de las respuestas
+// Compresión para reducir tamaño de respuestas
 app.use(compression({
-  // No comprimir respuestas pequeñas
-  threshold: 100, // bytes
-  // Usar algoritmo más rápido para respuestas más rápidas
-  level: 6,
-  // Comprimir todas las respuestas excepto imágenes
+  threshold: 100, // No comprimir respuestas menores a 100 bytes
+  level: 6,       // Nivel de compresión equilibrado entre velocidad y tamaño
   filter: (req, res) => {
-    if (req.path.includes('/imagen')) {
-      return false; // No comprimir imágenes (ya están comprimidas)
+    // No comprimir imágenes o contenido binario (ya están comprimidos)
+    if (req.path.includes('/imagen') || req.path.includes('/download')) {
+      return false;
     }
     return compression.filter(req, res);
   }
 }));
 
-// Seguridad
+// ===== MIDDLEWARE DE SEGURIDAD =====
+
+// Protección contra vulnerabilidades web comunes
 app.use(helmet({
-  contentSecurityPolicy: false,
+  contentSecurityPolicy: false, // Desactivado para compatibilidad
   crossOriginEmbedderPolicy: false,
   crossOriginOpenerPolicy: true,
   crossOriginResourcePolicy: { policy: "cross-origin" }
 }));
 
-app.use(mongoSanitize());
-app.use(hpp());
+// Aplicar bundle de seguridad (Incluye DoS, XSS, MongoDB injection, etc.)
+app.use(securityBundle);
 
-// Rate Limiting configurado para funcionar en entornos con proxy (como Vercel)
-// const limiter = rateLimit({
-//   windowMs: 15 * 60 * 1000,
-//   max: 200,
-//   standardHeaders: true,
-//   legacyHeaders: false
-// });
-// app.use(limiter);
-
-/* Recomendamos eliminar la configuración de sesión si no la estás usando
-// Configuración de sesión - ADAPTADA PARA VERCEL
-app.use(session({
-  secret: process.env.SESSION_SECRET || 'default_secret_key',
-  name: 'sessionId',
-  resave: false,
-  saveUninitialized: false,
-  cookie: {
-    secure: process.env.NODE_ENV === 'production',
-    httpOnly: true,
-    maxAge: 24 * 60 * 60 * 1000 // 24 horas
-  }
-}));
-*/
-
-// Headers adicionales para CORS - asegura consistencia en toda la aplicación
-app.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader('Access-Control-Allow-Origin', req.headers.origin || process.env.CORS_ORIGIN || '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Cache-Control');
+// Límite de tasa para prevenir abuso en la API
+// En producción, aplicar limitadores más estrictos
+if (process.env.NODE_ENV === 'production') {
+  // Limitar rutas sensibles con configuración más estricta
+  app.use('/api/auth/login', authLimiter);
+  app.use('/api/auth/register', authLimiter);
   
-  // Para solicitudes OPTIONS, responder inmediatamente sin continuar
-  if (req.method === 'OPTIONS') {
-    return res.status(204).end();
-  }
-  
-  next();
-});
+  // Aplicar limitador general a todas las rutas
+  app.use('/api', apiLimiter);
+}
 
-// Ruta de verificación para Vercel
+// ===== MIDDLEWARE DE CONEXIÓN A BASE DE DATOS =====
+
+// Asegurar que la conexión a la base de datos esté disponible
+app.use(ensureDbConnection);
+
+// ===== RUTAS PÚBLICAS =====
+
+// Ruta de verificación de estado (no requiere autenticación)
 app.get('/api/health', (req, res) => {
+  const mongoose = require('mongoose');
+  
   res.status(200).json({ 
+    success: true,
     status: 'ok', 
     environment: process.env.NODE_ENV,
     timestamp: new Date().toISOString(),
     version: process.env.npm_package_version || '1.0.0',
-    mongo: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected'
+    mongo: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
+    cache: {
+      keys: global.cache.keys().length,
+      stats: global.cache.getStats()
+    }
   });
 });
 
-// Conexión a MongoDB optimizada para Vercel
-const connectDB = async () => {
-  if (mongoose.connection.readyState === 1) {
-    return mongoose.connection;
-  }
-  
-  try {
-    await mongoose.connect(process.env.MONGODB_URI, {
-      serverSelectionTimeoutMS: 5000,
-      socketTimeoutMS: 45000,
-      // Importante: Cambiar bufferCommands a true para evitar el error de conexión
-      bufferCommands: true,
-      maxPoolSize: 10,
-      // Configuraciones adicionales
-      compressors: 'zlib',
-      readPreference: 'primaryPreferred'
-    });
-    
-    console.log('MongoDB conectado con éxito!');
-    
-    // Manejar eventos del ciclo de vida de la conexión
-    mongoose.connection.on('error', err => {
-      console.error('Error en conexión MongoDB:', err);
-    });
-    
-    mongoose.connection.on('disconnected', () => {
-      console.log('MongoDB desconectado');
-    });
-    
-    return mongoose.connection;
-  } catch (error) {
-    console.error('Error al conectar a MongoDB:', error.message);
-    throw error;
-  }
-};
+// ===== RUTAS API =====
 
-// Middleware para asegurar que la conexión a la base de datos esté lista
-app.use(async (req, res, next) => {
-  // Si la conexión no está lista, intentar conectar primero
-  if (mongoose.connection.readyState !== 1) {
-    try {
-      await connectDB();
-      next();
-    } catch (err) {
-      console.error('Error al conectar a MongoDB:', err.message);
-      return res.status(500).json({ 
-        error: 'Error de conexión a la base de datos', 
-        details: process.env.NODE_ENV === 'production' ? undefined : err.message 
-      });
-    }
-  } else {
-    next();
-  }
-});
-
-// Intentar conectar a MongoDB al inicio
-if (process.env.MONGODB_URI) {
-  connectDB()
-    .then(() => {
-      // Solo crear admin si la conexión fue exitosa
-      if (process.env.NODE_ENV === 'production') {
-        try {
-          createInitialAdmin();
-        } catch (err) {
-          console.warn('No se pudo crear el admin inicial:', err.message);
-        }
-      }
-    })
-    .catch(err => {
-      console.error('Error al conectar a MongoDB:', err.message);
-    });
-}
-
-// Rutas API
+// Rutas de la aplicación
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/producto', require('./routes/productoRoutes'));
 app.use('/api/cliente', require('./routes/clienteRoutes'));
 app.use('/api/pedido', require('./routes/pedidoRoutes'));
 app.use('/api/downloads', require('./routes/downloadRoutes'));
 
-// Middleware de control de errores
-app.use((err, req, res, next) => {
-  console.error('Error no capturado:', err);
-  
-  // Estructurar la respuesta de error
-  const errorResponse = {
-    message: 'Error interno del servidor',
-    status: err.status || 500,
-    // Solo incluir detalles en desarrollo
-    error: process.env.NODE_ENV === 'production' ? {} : {
-      message: err.message,
-      stack: err.stack
-    }
-  };
-  
-  res.status(errorResponse.status).json(errorResponse);
-});
+// ===== MIDDLEWARE DE MANEJO DE ERRORES =====
 
-// Manejar ruta 404
+// Middleware para rutas no encontradas (404)
 app.use((req, res) => {
   res.status(404).json({ 
+    success: false,
     message: 'Ruta no encontrada', 
     path: req.originalUrl,
     method: req.method
   });
 });
 
-// Iniciar el servidor solo en desarrollo
-if (process.env.NODE_ENV == 'production') {
+// Middleware para capturar y formatear errores
+app.use((err, req, res, next) => {
+  // Registrar error en consola con detalles
+  console.error('Error no capturado:', err);
+  
+  // Determinar código de estado HTTP apropiado
+  const statusCode = err.status || err.statusCode || 500;
+  
+  // Estructurar la respuesta de error
+  const errorResponse = {
+    success: false,
+    message: err.message || 'Error interno del servidor',
+    status: statusCode,
+    // Incluir información de depuración solo en desarrollo
+    ...(process.env.NODE_ENV !== 'production' && {
+      error: {
+        name: err.name,
+        message: err.message,
+        stack: err.stack,
+        code: err.code
+      }
+    })
+  };
+  
+  // Enviar respuesta al cliente
+  res.status(statusCode).json(errorResponse);
+});
+
+// ===== INICIALIZACIÓN =====
+
+// Conexión a MongoDB e inicialización de datos
+const initializeApp = async () => {
+  try {
+    if (process.env.MONGODB_URI) {
+      // Conectar a MongoDB
+      await connectDB();
+      
+      // Creación de admin inicial en producción
+      if (process.env.NODE_ENV === 'production') {
+        await createInitialAdmin();
+      }
+      
+      console.log('Inicialización completada con éxito');
+    } else {
+      console.error('MONGODB_URI no está definida. La aplicación no funcionará correctamente.');
+    }
+  } catch (error) {
+    console.error('Error durante la inicialización:', error);
+  }
+};
+
+// Ejecutar inicialización
+initializeApp();
+
+// ===== INICIO DEL SERVIDOR =====
+
+// Solo iniciar servidor HTTP en entornos que no son serverless (desarrollo local)
+if (process.env.NODE_ENV == 'production' || process.env.START_SERVER === 'true') {
   const PORT = process.env.PORT || 4000;
-  app.listen(PORT, () => console.log(`Servidor en puerto ${PORT}`));
+  app.listen(PORT, () => {
+    console.log(`
+    =======================================
+    🚀 Servidor ejecutándose en puerto ${PORT}
+    🌎 Entorno: ${process.env.NODE_ENV || 'development'}
+    📅 ${new Date().toISOString()}
+    =======================================
+    `);
+  });
 }
 
-// Exportar la app para Vercel
+// Exportar la app para Vercel y otros entornos serverless
 module.exports = app;

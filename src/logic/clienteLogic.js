@@ -4,12 +4,16 @@ const mongoose = require('mongoose');
 
 // Obtener todos los clientes con su estructura completa
 const obtenerClientes = async () => {
-    return await Cliente.find().populate('userId', 'nombre email usuario apellido role isActive');
+    return await Cliente.find()
+        .populate('userId', 'nombre email usuario apellido role isActive')
+        .populate('subServicios.supervisorId', 'nombre email usuario apellido role isActive');
 };
 
 // Obtener cliente por ID
 const obtenerClientePorId = async (id) => {
-    return await Cliente.findById(id).populate('userId', 'nombre email usuario apellido role isActive');
+    return await Cliente.findById(id)
+        .populate('userId', 'nombre email usuario apellido role isActive')
+        .populate('subServicios.supervisorId', 'nombre email usuario apellido role isActive');
 };
 
 // Crear nuevo cliente con estructura completa
@@ -30,7 +34,44 @@ const eliminarCliente = async (id) => {
 
 // Obtener clientes por ID de usuario
 const obtenerClientesPorUserId = async (userId) => {
-    return await Cliente.find({ userId }).populate('userId', 'nombre email usuario apellido role isActive');
+    return await Cliente.find({ userId })
+        .populate('userId', 'nombre email usuario apellido role isActive')
+        .populate('subServicios.supervisorId', 'nombre email usuario apellido role isActive');
+};
+
+// Obtener clientes por supervisor de subServicio
+const obtenerClientesPorSupervisorId = async (supervisorId) => {
+    return await Cliente.find({ 'subServicios.supervisorId': supervisorId })
+        .populate('userId', 'nombre email usuario apellido role isActive')
+        .populate('subServicios.supervisorId', 'nombre email usuario apellido role isActive');
+};
+
+// Obtener subServicios por supervisor
+const obtenerSubServiciosPorSupervisorId = async (supervisorId) => {
+    const clientes = await Cliente.find({ 'subServicios.supervisorId': supervisorId })
+        .populate('userId', 'nombre email usuario apellido role isActive')
+        .populate('subServicios.supervisorId', 'nombre email usuario apellido role isActive');
+    
+    // Procesar para devolver solo los subServicios asignados a este supervisor
+    const subServiciosDelSupervisor = [];
+    
+    clientes.forEach(cliente => {
+        const subServiciosFiltrados = cliente.subServicios.filter(
+            subServ => subServ.supervisorId && 
+            subServ.supervisorId._id.toString() === supervisorId.toString()
+        );
+        
+        if (subServiciosFiltrados.length > 0) {
+            subServiciosDelSupervisor.push({
+                clienteId: cliente._id,
+                nombreCliente: cliente.nombre,
+                userId: cliente.userId,
+                subServicios: subServiciosFiltrados
+            });
+        }
+    });
+    
+    return subServiciosDelSupervisor;
 };
 
 // Obtener clientes sin asignar (sin userId o con usuario inactivo)
@@ -43,6 +84,7 @@ const obtenerClientesSinAsignar = async (idsUsuariosInactivos) => {
         userId: { $in: idsUsuariosInactivos } 
     })
     .populate('userId', 'email usuario nombre apellido role isActive')
+    .populate('subServicios.supervisorId', 'nombre email usuario apellido role isActive')
     .exec();
     
     return { clientesSinUsuario, clientesUsuarioInactivo };
@@ -127,6 +169,62 @@ const eliminarSubUbicacion = async (clienteId, subServicioId, subUbicacionId) =>
     return await cliente.save();
 };
 
+// NUEVA FUNCIÓN: Asignar supervisor a un subservicio
+const asignarSupervisorSubServicio = async (clienteId, subServicioId, supervisorId) => {
+    const cliente = await Cliente.findById(clienteId);
+    if (!cliente) return null;
+    
+    const subServicio = cliente.subServicios.id(subServicioId);
+    if (!subServicio) return null;
+    
+    // Asignar el supervisor al subservicio
+    subServicio.supervisorId = supervisorId;
+    
+    return await cliente.save();
+};
+
+// NUEVA FUNCIÓN: Remover supervisor de un subservicio
+const removerSupervisorSubServicio = async (clienteId, subServicioId) => {
+    const cliente = await Cliente.findById(clienteId);
+    if (!cliente) return null;
+    
+    const subServicio = cliente.subServicios.id(subServicioId);
+    if (!subServicio) return null;
+    
+    // Eliminar el supervisor del subservicio
+    subServicio.supervisorId = undefined;
+    
+    return await cliente.save();
+};
+
+// NUEVA FUNCIÓN: Obtener todos los subservicios sin supervisor asignado
+const obtenerSubServiciosSinSupervisor = async () => {
+    // Encontrar clientes con subservicios sin supervisor asignado
+    const clientes = await Cliente.find({ 
+        'subServicios': { $elemMatch: { supervisorId: { $exists: false } } } 
+    }).populate('userId', 'nombre email usuario apellido role isActive');
+    
+    // Extraer solo los subservicios sin supervisor
+    const resultado = [];
+    
+    clientes.forEach(cliente => {
+        const subServiciosSinSupervisor = cliente.subServicios.filter(
+            subServ => !subServ.supervisorId
+        );
+        
+        if (subServiciosSinSupervisor.length > 0) {
+            resultado.push({
+                clienteId: cliente._id,
+                nombreCliente: cliente.nombre,
+                userId: cliente.userId,
+                subServicios: subServiciosSinSupervisor
+            });
+        }
+    });
+    
+    return resultado;
+};
+
 // Obtener clientes en formato de corte de control (estructura plana)
 const obtenerClientesEstructurados = async () => {
     return await Cliente.aggregate([
@@ -136,6 +234,16 @@ const obtenerClientesEstructurados = async () => {
         // Segunda etapa: desplegar el array de subUbicaciones
         { $unwind: { path: '$subServicios.subUbicaciones', preserveNullAndEmptyArrays: false } },
         
+        // Lookup para obtener datos de supervisores
+        {
+            $lookup: {
+                from: 'users',
+                localField: 'subServicios.supervisorId',
+                foreignField: '_id',
+                as: 'supervisorInfo'
+            }
+        },
+        
         // Tercera etapa: proyectar los campos en la estructura deseada
         {
             $project: {
@@ -143,7 +251,8 @@ const obtenerClientesEstructurados = async () => {
                 tipo: 'CLIENTE',
                 CLIENTE: '$nombre',
                 SUBSERVICIO: '$subServicios.nombre',
-                SUBUBICACION: '$subServicios.subUbicaciones.nombre'
+                SUBUBICACION: '$subServicios.subUbicaciones.nombre',
+                SUPERVISOR: { $arrayElemAt: ['$supervisorInfo.nombre', 0] }
             }
         },
         
@@ -159,6 +268,8 @@ module.exports = {
     actualizarCliente,
     eliminarCliente,
     obtenerClientesPorUserId,
+    obtenerClientesPorSupervisorId,
+    obtenerSubServiciosPorSupervisorId,
     obtenerClientesSinAsignar,
     agregarSubServicio,
     actualizarSubServicio,
@@ -166,5 +277,8 @@ module.exports = {
     agregarSubUbicacion,
     actualizarSubUbicacion,
     eliminarSubUbicacion,
-    obtenerClientesEstructurados
+    obtenerClientesEstructurados,
+    asignarSupervisorSubServicio,
+    removerSupervisorSubServicio,
+    obtenerSubServiciosSinSupervisor
 };

@@ -21,6 +21,23 @@ exports.getClientes = async (req, res) => {
                 clienteObj.requiereAsignacion = true;
             }
             
+            // Verificar subServicios sin supervisor
+            if (cliente.subServicios && cliente.subServicios.length > 0) {
+                clienteObj.subServicios = cliente.subServicios.map(subServicio => {
+                    const subServObj = subServicio.toObject ? subServicio.toObject() : subServicio;
+                    
+                    // Marcar subServicios sin supervisor
+                    if (!subServicio.supervisorId) {
+                        subServObj.requiereSupervisor = true;
+                    } else if (typeof subServicio.supervisorId === 'object' && 
+                              subServicio.supervisorId.isActive === false) {
+                        subServObj.requiereSupervisor = true;
+                    }
+                    
+                    return subServObj;
+                });
+            }
+            
             return clienteObj;
         });
         
@@ -47,6 +64,23 @@ exports.getClienteById = async (req, res) => {
         
         if (necesitaReasignacion) {
             clienteObj.requiereAsignacion = true;
+        }
+        
+        // Verificar subServicios sin supervisor
+        if (cliente.subServicios && cliente.subServicios.length > 0) {
+            clienteObj.subServicios = cliente.subServicios.map(subServicio => {
+                const subServObj = subServicio.toObject ? subServicio.toObject() : subServicio;
+                
+                // Marcar subServicios sin supervisor
+                if (!subServicio.supervisorId) {
+                    subServObj.requiereSupervisor = true;
+                } else if (typeof subServicio.supervisorId === 'object' && 
+                          subServicio.supervisorId.isActive === false) {
+                    subServObj.requiereSupervisor = true;
+                }
+                
+                return subServObj;
+            });
         }
         
         res.json(clienteObj);
@@ -80,6 +114,23 @@ exports.getClientesByUserId = async (req, res) => {
                 clienteObj.requiereAsignacion = true;
             }
             
+            // Verificar subServicios sin supervisor
+            if (cliente.subServicios && cliente.subServicios.length > 0) {
+                clienteObj.subServicios = cliente.subServicios.map(subServicio => {
+                    const subServObj = subServicio.toObject ? subServicio.toObject() : subServicio;
+                    
+                    // Marcar subServicios sin supervisor
+                    if (!subServicio.supervisorId) {
+                        subServObj.requiereSupervisor = true;
+                    } else if (typeof subServicio.supervisorId === 'object' && 
+                              subServicio.supervisorId.isActive === false) {
+                        subServObj.requiereSupervisor = true;
+                    }
+                    
+                    return subServObj;
+                });
+            }
+            
             return clienteObj;
         });
         
@@ -88,6 +139,67 @@ exports.getClientesByUserId = async (req, res) => {
         console.error('Error al obtener clientes por userId:', error);
         res.status(500).json({ 
             mensaje: 'Error al obtener clientes', 
+            error: error.message,
+            stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        });
+    }
+};
+
+// NUEVO ENDPOINT: Obtener clientes por ID de supervisor (a nivel de subServicio)
+exports.getClientesBySupervisorId = async (req, res) => {
+    try {
+        // Validar que el ID de supervisor sea un ObjectId válido
+        const supervisorId = req.params.supervisorId;
+        if (!mongoose.Types.ObjectId.isValid(supervisorId)) {
+            return res.status(400).json({ mensaje: 'ID de supervisor inválido' });
+        }
+
+        // Buscar clientes con subservicios asociados al supervisorId
+        const clientes = await clienteLogic.obtenerClientesPorSupervisorId(supervisorId);
+        
+        res.json(clientes);
+    } catch (error) {
+        console.error('Error al obtener clientes por supervisorId:', error);
+        res.status(500).json({ 
+            mensaje: 'Error al obtener clientes por supervisor', 
+            error: error.message,
+            stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        });
+    }
+};
+
+// NUEVO ENDPOINT: Obtener subServicios por ID de supervisor
+exports.getSubServiciosBySupervisorId = async (req, res) => {
+    try {
+        // Validar que el ID de supervisor sea un ObjectId válido
+        const supervisorId = req.params.supervisorId;
+        if (!mongoose.Types.ObjectId.isValid(supervisorId)) {
+            return res.status(400).json({ mensaje: 'ID de supervisor inválido' });
+        }
+
+        // Buscar subservicios asociados al supervisorId
+        const subServicios = await clienteLogic.obtenerSubServiciosPorSupervisorId(supervisorId);
+        
+        res.json(subServicios);
+    } catch (error) {
+        console.error('Error al obtener subservicios por supervisorId:', error);
+        res.status(500).json({ 
+            mensaje: 'Error al obtener subservicios por supervisor', 
+            error: error.message,
+            stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        });
+    }
+};
+
+// NUEVO ENDPOINT: Obtener subServicios sin supervisor asignado
+exports.getSubServiciosSinSupervisor = async (req, res) => {
+    try {
+        const subServiciosSinSupervisor = await clienteLogic.obtenerSubServiciosSinSupervisor();
+        res.json(subServiciosSinSupervisor);
+    } catch (error) {
+        console.error('Error al obtener subservicios sin supervisor:', error);
+        res.status(500).json({ 
+            mensaje: 'Error al obtener subservicios sin supervisor', 
             error: error.message,
             stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
         });
@@ -221,6 +333,8 @@ exports.addSubServicio = async (req, res) => {
         const subServicioData = {
             nombre: req.body.nombre,
             descripcion: req.body.descripcion || '',
+            // Incluir supervisorId si se proporciona
+            ...(req.body.supervisorId && { supervisorId: req.body.supervisorId }),
             subUbicaciones: req.body.subUbicaciones || []
         };
         
@@ -277,6 +391,67 @@ exports.deleteSubServicio = async (req, res) => {
     } catch (error) {
         console.error('Error al eliminar subservicio:', error);
         res.status(500).json({ mensaje: 'Error al eliminar subservicio', error: error.message });
+    }
+};
+
+// NUEVO ENDPOINT: Asignar supervisor a un subservicio
+exports.assignSupervisorToSubServicio = async (req, res) => {
+    try {
+        // Validar los IDs
+        if (!mongoose.Types.ObjectId.isValid(req.params.clienteId)) {
+            return res.status(400).json({ mensaje: 'ID de cliente inválido' });
+        }
+        
+        if (!mongoose.Types.ObjectId.isValid(req.params.subServicioId)) {
+            return res.status(400).json({ mensaje: 'ID de subservicio inválido' });
+        }
+        
+        if (!mongoose.Types.ObjectId.isValid(req.body.supervisorId)) {
+            return res.status(400).json({ mensaje: 'ID de supervisor inválido' });
+        }
+        
+        const cliente = await clienteLogic.asignarSupervisorSubServicio(
+            req.params.clienteId,
+            req.params.subServicioId,
+            req.body.supervisorId
+        );
+        
+        if (!cliente) {
+            return res.status(404).json({ mensaje: 'Cliente o subservicio no encontrado' });
+        }
+        
+        res.json(cliente);
+    } catch (error) {
+        console.error('Error al asignar supervisor a subservicio:', error);
+        res.status(500).json({ mensaje: 'Error al asignar supervisor', error: error.message });
+    }
+};
+
+// NUEVO ENDPOINT: Remover supervisor de un subservicio
+exports.removeSupervisorFromSubServicio = async (req, res) => {
+    try {
+        // Validar los IDs
+        if (!mongoose.Types.ObjectId.isValid(req.params.clienteId)) {
+            return res.status(400).json({ mensaje: 'ID de cliente inválido' });
+        }
+        
+        if (!mongoose.Types.ObjectId.isValid(req.params.subServicioId)) {
+            return res.status(400).json({ mensaje: 'ID de subservicio inválido' });
+        }
+        
+        const cliente = await clienteLogic.removerSupervisorSubServicio(
+            req.params.clienteId,
+            req.params.subServicioId
+        );
+        
+        if (!cliente) {
+            return res.status(404).json({ mensaje: 'Cliente o subservicio no encontrado' });
+        }
+        
+        res.json(cliente);
+    } catch (error) {
+        console.error('Error al remover supervisor de subservicio:', error);
+        res.status(500).json({ mensaje: 'Error al remover supervisor', error: error.message });
     }
 };
 

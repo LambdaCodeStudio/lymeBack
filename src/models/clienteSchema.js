@@ -25,6 +25,12 @@ const subServicioSchema = new mongoose.Schema({
     type: String,
     default: ''
   },
+  // Nuevo campo para asignar supervisor al subservicio
+  supervisorId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    index: true // Añadimos índice para mejorar rendimiento de búsquedas
+  },
   // Lista de sububicaciones asociadas a este subservicio
   subUbicaciones: [subUbicacionSchema]
 });
@@ -52,7 +58,7 @@ const clienteSchema = new mongoose.Schema({
     type: String,
     default: ''
   },
-  // Referencia al usuario asignado
+  // Referencia al usuario asignado (se mantiene para compatibilidad)
   userId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
@@ -84,5 +90,6 @@ const clienteSchema = new mongoose.Schema({
 clienteSchema.index({ nombre: 1 });
 clienteSchema.index({ userId: 1 });
 clienteSchema.index({ 'subServicios.nombre': 1 });
+clienteSchema.index({ 'subServicios.supervisorId': 1 }); // Nuevo índice para buscar por supervisor
 
 module.exports = mongoose.model('Cliente', clienteSchema);

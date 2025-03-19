@@ -101,8 +101,61 @@ exports.getPedidosBySupervisorId = async (req, res) => {
             sort: { fecha: -1 }
         };
 
-        const pedidos = await pedidoLogic.obtenerPedidosPorSupervisorId(req.params.supervisorId, opciones);
-        res.json(pedidos);
+        // Obtener pedidos por supervisorId (directamente asignado o a través de subServicio)
+        const pedidos = await Pedido.find({
+            $or: [
+                { supervisorId: req.params.supervisorId },
+                { 'cliente.subServicioId': { $exists: true } }
+            ]
+        })
+        .populate('userId', 'nombre email usuario apellido')
+        .populate('supervisorId', 'nombre email usuario apellido')
+        .populate('productos.productoId')
+        .populate('cliente.clienteId', 'nombre')
+        .populate({
+            path: 'cliente.clienteId',
+            select: 'nombre subServicios',
+            populate: {
+                path: 'subServicios',
+                match: { _id: { $eq: mongoose.Types.ObjectId('$cliente.subServicioId') } },
+                populate: { path: 'supervisorId' }
+            }
+        })
+        .sort(opciones.sort)
+        .skip(opciones.skip)
+        .limit(opciones.limit);
+        
+        // Filtrar manualmente los pedidos que tienen el supervisor asignado a nivel de subServicio
+        const pedidosFiltrados = pedidos.filter(pedido => {
+            // Si el supervisorId coincide directamente, incluir
+            if (pedido.supervisorId && 
+                pedido.supervisorId._id.toString() === req.params.supervisorId) {
+                return true;
+            }
+            
+            // Si hay cliente y subServicioId, verificar si el subServicio tiene asignado este supervisor
+            if (pedido.cliente && 
+                pedido.cliente.clienteId && 
+                pedido.cliente.subServicioId) {
+                
+                const cliente = pedido.cliente.clienteId;
+                if (!cliente.subServicios) return false;
+                
+                // Buscar el subServicio correspondiente
+                const subServicio = cliente.subServicios.find(sub => 
+                    sub._id.toString() === pedido.cliente.subServicioId.toString()
+                );
+                
+                // Verificar si el subServicio tiene asignado el supervisor
+                return subServicio && 
+                       subServicio.supervisorId && 
+                       subServicio.supervisorId.toString() === req.params.supervisorId;
+            }
+            
+            return false;
+        });
+        
+        res.json(pedidosFiltrados);
     } catch (error) {
         console.error('Error al obtener pedidos por supervisorId:', error);
         res.status(500).json({ 
@@ -336,6 +389,31 @@ exports.createPedido = async (req, res) => {
         // Agregar userId desde el token de autenticación si está disponible
         if (req.user && req.user.id && !req.body.userId) {
             req.body.userId = req.user.id;
+        }
+        
+        // Si no hay supervisorId pero hay un subServicioId, intentar obtener el supervisor del subServicio
+        if (!req.body.supervisorId && 
+            req.body.cliente && 
+            req.body.cliente.clienteId && 
+            req.body.cliente.subServicioId) {
+            
+            try {
+                const Cliente = mongoose.model('Cliente');
+                const cliente = await Cliente.findById(req.body.cliente.clienteId);
+                
+                if (cliente) {
+                    // Buscar el subServicio correspondiente
+                    const subServicio = cliente.subServicios.id(req.body.cliente.subServicioId);
+                    
+                    if (subServicio && subServicio.supervisorId) {
+                        // Asignar el supervisor del subServicio al pedido
+                        req.body.supervisorId = subServicio.supervisorId;
+                    }
+                }
+            } catch (err) {
+                console.error('Error al obtener supervisor de subServicio:', err);
+                // Continuar sin asignar supervisor
+            }
         }
 
         // Crear el pedido
