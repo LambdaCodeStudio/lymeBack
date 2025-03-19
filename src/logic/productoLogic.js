@@ -20,28 +20,25 @@ function invalidarCachePorClave(key) {
     productoCache.del(key);
 }
 
+// Función mejorada para obtener todos los productos
 async function obtenerTodos(userSeccion = null) {
     return (await obtenerProductosPaginados({}, 1, 1000, userSeccion)).items;
 }
 
-// Obtener un producto por ID
+// Obtener un producto por ID (mantenemos la existente)
 async function obtenerPorId(id) {
-    // Clave de caché para el producto individual
     const cacheKey = `producto_${id}`;
-    
-    // Verificar si está en caché
     const cachedProduct = productoCache.get(cacheKey);
+    
     if (cachedProduct) {
         return cachedProduct;
     }
     
-    // No está en caché, buscar en la base de datos
     const producto = await Producto.findById(id)
         .populate('itemsCombo.productoId')
         .lean();
     
     if (producto) {
-        // Almacenar en caché
         productoCache.set(cacheKey, producto);
     }
     
@@ -57,6 +54,7 @@ async function obtenerPorIdLigero(id) {
     }).lean();
 }
 
+// Función para obtener productos por sección
 async function obtenerProductosPorSeccion(seccion) {
     let query = {};
     
@@ -67,37 +65,158 @@ async function obtenerProductosPorSeccion(seccion) {
     return (await obtenerProductosPaginados(query, 1, 1000, seccion)).items;
 }
 
-// Función para obtener productos paginados y filtrados
-async function obtenerProductosPaginados(query = {}, page = 1, limit = 20, userSeccion = null) {
+// NUEVA FUNCIÓN: Obtener productos por marca
+async function obtenerProductosPorMarca(marca, userSeccion = null) {
+    let query = { marca };
+    
+    if (userSeccion && userSeccion !== 'ambos') {
+        query.categoria = userSeccion;
+    }
+    
+    return (await obtenerProductosPaginados(query, 1, 1000, userSeccion)).items;
+}
+
+// NUEVA FUNCIÓN: Obtener productos por proveedor
+async function obtenerProductosPorProveedor(proveedorNombre, userSeccion = null) {
+    let query = { 'proveedor.nombre': proveedorNombre };
+    
+    if (userSeccion && userSeccion !== 'ambos') {
+        query.categoria = userSeccion;
+    }
+    
+    return (await obtenerProductosPaginados(query, 1, 1000, userSeccion)).items;
+}
+
+// NUEVA FUNCIÓN: Buscar productos por rango de precios
+async function obtenerProductosPorRangoPrecio(precioMin, precioMax, userSeccion = null) {
+    let query = {
+        precio: { $gte: precioMin, $lte: precioMax }
+    };
+    
+    if (userSeccion && userSeccion !== 'ambos') {
+        query.categoria = userSeccion;
+    }
+    
+    return (await obtenerProductosPaginados(query, 1, 1000, userSeccion)).items;
+}
+
+// NUEVA FUNCIÓN: Obtener productos con stock bajo
+async function obtenerProductosStockBajo(threshold = null, userSeccion = null) {
+    let query = {};
+    
+    if (threshold !== null) {
+        // Si se proporciona un umbral personalizado
+        query.stock = { $lte: threshold, $gt: 0 };
+    } else {
+        // Usar el campo de alertaStockBajo calculado automáticamente
+        query.alertaStockBajo = true;
+        query.stock = { $gt: 0 }; // Excluir productos sin stock
+    }
+    
+    if (userSeccion && userSeccion !== 'ambos') {
+        query.categoria = userSeccion;
+    }
+    
+    return (await obtenerProductosPaginados(query, 1, 1000, userSeccion)).items;
+}
+
+// NUEVA FUNCIÓN: Obtener productos sin stock
+async function obtenerProductosSinStock(userSeccion = null) {
+    let query = { stock: 0 };
+    
+    if (userSeccion && userSeccion !== 'ambos') {
+        query.categoria = userSeccion;
+    }
+    
+    return (await obtenerProductosPaginados(query, 1, 1000, userSeccion)).items;
+}
+
+// NUEVA FUNCIÓN: Obtener productos más vendidos
+async function obtenerProductosMasVendidos(limite = 10, userSeccion = null) {
+    let query = { vendidos: { $gt: 0 } };
+    
+    if (userSeccion && userSeccion !== 'ambos') {
+        query.categoria = userSeccion;
+    }
+    
+    const productos = await Producto.find(query)
+        .sort({ vendidos: -1 })
+        .limit(limite)
+        .lean();
+        
+    return productos;
+}
+
+// Función mejorada para obtener productos paginados y filtrados
+async function obtenerProductosPaginados(query = {}, page = 1, limit = 20, userSeccion = null, sortBy = 'nombre', sortDir = 1) {
+    // Procesamiento de filtros especiales
     // Verificar si debemos filtrar por productos sin stock (prioridad más alta)
     if (query.noStock === 'true' || query.noStock === true) {
-      // Eliminar parámetro de filtrado que ya hemos procesado
-      delete query.noStock;
-      
-      // Añadir condición de stock exactamente cero
-      query.stock = 0;
+        delete query.noStock;
+        query.stock = 0;
     }
     // Verificar si debemos filtrar por stock bajo (segunda prioridad)
     else if (query.lowStock === 'true' || query.lowStock === true) {
-      // Obtener umbral desde query, por defecto 10
-      const threshold = parseInt(query.threshold) || 10;
-      
-      // Eliminar parámetros de filtrado que ya hemos procesado
-      delete query.lowStock;
-      delete query.threshold;
-      
-      // Añadir condición de stock bajo a la query
-      query.stock = { $lte: threshold, $gt: 0 };
+        // Obtener umbral desde query, por defecto 10
+        const threshold = parseInt(query.threshold) || 10;
+        delete query.lowStock;
+        delete query.threshold;
+        
+        // Añadir condición de stock bajo a la query
+        query.stock = { $lte: threshold, $gt: 0 };
+    }
+    
+    // NUEVA FUNCIONALIDAD: Filtrar por estado
+    if (query.estado) {
+        query.estado = query.estado;
+    }
+    
+    // NUEVA FUNCIONALIDAD: Filtrar por rango de precios
+    if (query.precioMin !== undefined || query.precioMax !== undefined) {
+        query.precio = {};
+        
+        if (query.precioMin !== undefined) {
+            query.precio.$gte = parseFloat(query.precioMin);
+            delete query.precioMin;
+        }
+        
+        if (query.precioMax !== undefined) {
+            query.precio.$lte = parseFloat(query.precioMax);
+            delete query.precioMax;
+        }
+    }
+    
+    // NUEVA FUNCIONALIDAD: Filtrar por marca
+    if (query.marca) {
+        query.marca = query.marca;
+    }
+    
+    // NUEVA FUNCIONALIDAD: Filtrar por proveedor
+    if (query.proveedor) {
+        query['proveedor.nombre'] = query.proveedor;
+        delete query.proveedor;
+    }
+    
+    // NUEVA FUNCIONALIDAD: Filtrar por fecha de actualización
+    if (query.updatedAfter) {
+        query.updatedAt = { $gte: new Date(query.updatedAfter) };
+        delete query.updatedAfter;
+    }
+    
+    // NUEVA FUNCIONALIDAD: Búsqueda de texto
+    if (query.texto) {
+        query.$text = { $search: query.texto };
+        delete query.texto;
     }
     
     // Generar clave de caché única
-    const cacheKey = `productos_${JSON.stringify(query)}_${page}_${limit}_${userSeccion || 'all'}`;
+    const cacheKey = `productos_${JSON.stringify(query)}_${page}_${limit}_${userSeccion || 'all'}_${sortBy}_${sortDir}`;
     
     // Verificar si tenemos estos datos en caché
     const cachedData = productoCache.get(cacheKey);
     if (cachedData) {
-      console.log(`Cache hit para ${cacheKey}`);
-      return cachedData;
+        console.log(`Cache hit para ${cacheKey}`);
+        return cachedData;
     }
     
     console.log(`Cache miss para ${cacheKey}, consultando base de datos`);
@@ -106,76 +225,276 @@ async function obtenerProductosPaginados(query = {}, page = 1, limit = 20, userS
     
     // Filtrar automáticamente por sección del usuario si es necesario
     if (userSeccion && userSeccion !== 'ambos' && !query.categoria) {
-      query.categoria = userSeccion;
+        query.categoria = userSeccion;
     }
     
-    // Proyección para seleccionar solo los campos necesarios
+    // Determinar orden de resultados
+    const sort = {};
+    sort[sortBy] = sortDir;
+    
+    // Proyección para seleccionar solo los campos necesarios (optimizada)
     const projection = {
-      nombre: 1,
-      descripcion: 1, 
-      categoria: 1,
-      subCategoria: 1,
-      precio: 1,
-      stock: 1,
-      vendidos: 1,
-      esCombo: 1,
-      'itemsCombo.productoId': 1,
-      'itemsCombo.cantidad': 1,
-      updatedAt: 1,
-      createdAt: 1
+        nombre: 1,
+        descripcion: 1, 
+        categoria: 1,
+        subCategoria: 1,
+        marca: 1,
+        precio: 1,
+        stock: 1,
+        vendidos: 1,
+        esCombo: 1,
+        'proveedor.nombre': 1,
+        'ubicacion.deposito': 1,
+        estado: 1,
+        alertaStockBajo: 1,
+        'itemsCombo.productoId': 1,
+        'itemsCombo.cantidad': 1,
+        updatedAt: 1,
+        createdAt: 1
     };
     
     // Ejecutar consultas en paralelo para mejor rendimiento
     const [productos, totalItems] = await Promise.all([
-      Producto.find(query, projection)
-        .populate({
-          path: 'itemsCombo.productoId',
-          select: 'nombre precio' // Solo los campos necesarios
-        })
-        .sort({ nombre: 1 }) // Ordenar por nombre
-        .skip(skip)
-        .limit(limit)
-        .lean(), // Usar lean() para mejor rendimiento
-        
-      Producto.countDocuments(query)
+        Producto.find(query, projection)
+            .populate({
+                path: 'itemsCombo.productoId',
+                select: 'nombre precio' // Solo los campos necesarios
+            })
+            .sort(sort)
+            .skip(skip)
+            .limit(limit)
+            .lean(), // Usar lean() para mejor rendimiento
+            
+        Producto.countDocuments(query)
     ]);
     
     // Verificar qué productos tienen imágenes (sin cargar los bytes)
     const productIds = productos.map(p => p._id);
     const productsWithImages = await Producto.find(
-      { _id: { $in: productIds }, imagen: { $exists: true, $ne: null } },
-      { _id: 1 }
+        { _id: { $in: productIds }, imagen: { $exists: true, $ne: null } },
+        { _id: 1 }
     ).lean();
     
     // Crear mapa para seguimiento rápido
     const hasImageMap = new Map();
     productsWithImages.forEach(p => {
-      hasImageMap.set(p._id.toString(), true);
+        hasImageMap.set(p._id.toString(), true);
     });
     
     // Añadir flag hasImage a cada producto
     const enhancedProducts = productos.map(p => ({
-      ...p,
-      hasImage: hasImageMap.has(p._id.toString())
+        ...p,
+        hasImage: hasImageMap.has(p._id.toString())
     }));
     
     // Preparar respuesta con metadatos de paginación
     const result = {
-      items: enhancedProducts,
-      page,
-      limit,
-      totalItems,
-      totalPages: Math.ceil(totalItems / limit),
-      hasNextPage: page < Math.ceil(totalItems / limit),
-      hasPrevPage: page > 1
+        items: enhancedProducts,
+        page,
+        limit,
+        totalItems,
+        totalPages: Math.ceil(totalItems / limit),
+        hasNextPage: page < Math.ceil(totalItems / limit),
+        hasPrevPage: page > 1,
+        sortBy,
+        sortDir
     };
     
     // Guardar en caché
     productoCache.set(cacheKey, result);
     
     return result;
-  }
+}
 
+// NUEVA FUNCIÓN: Generar reporte de inventario con cortes de control
+async function generarReporteInventario(userSeccion = null) {
+    const match = {};
+    if (userSeccion && userSeccion !== 'ambos') {
+        match.categoria = userSeccion;
+    }
+    
+    // Usamos agregación para generar el reporte con cortes de control
+    const resultado = await Producto.aggregate([
+        { $match: match },
+        { 
+            $project: {
+                _id: 1,
+                nombre: 1, 
+                categoria: 1,
+                subCategoria: 1,
+                marca: { $ifNull: ['$marca', 'Sin marca'] },
+                'proveedor.nombre': { $ifNull: ['$proveedor.nombre', 'Sin proveedor'] },
+                precio: 1,
+                stock: 1,
+                valorInventario: { $multiply: ['$precio', '$stock'] }
+            }
+        },
+        {
+            $sort: {
+                categoria: 1,
+                subCategoria: 1,
+                marca: 1,
+                'proveedor.nombre': 1
+            }
+        },
+        {
+            $group: {
+                _id: {
+                    categoria: '$categoria',
+                    subCategoria: '$subCategoria',
+                    marca: '$marca'
+                },
+                productos: { $push: '$$ROOT' },
+                cantidadProductos: { $sum: 1 },
+                stockTotal: { $sum: '$stock' },
+                valorTotal: { $sum: '$valorInventario' }
+            }
+        },
+        {
+            $sort: {
+                '_id.categoria': 1,
+                '_id.subCategoria': 1,
+                '_id.marca': 1
+            }
+        }
+    ]);
+    
+    // Estructurar el reporte final
+    const reporte = {
+        totalProductos: 0,
+        totalStock: 0,
+        valorTotalInventario: 0,
+        cortes: []
+    };
+    
+    // Procesar resultados
+    resultado.forEach(grupo => {
+        reporte.totalProductos += grupo.cantidadProductos;
+        reporte.totalStock += grupo.stockTotal;
+        reporte.valorTotalInventario += grupo.valorTotal;
+        
+        // Estructurar el corte de control
+        reporte.cortes.push({
+            // Estilo corte de control
+            tipo: 'CATEGORIA',
+            CATEGORIA: grupo._id.categoria,
+            SUBCATEGORIA: grupo._id.subCategoria,
+            MARCA: grupo._id.marca,
+            cantidadProductos: grupo.cantidadProductos,
+            stockTotal: grupo.stockTotal,
+            valorTotal: grupo.valorTotal,
+            productos: grupo.productos
+        });
+    });
+    
+    return reporte;
+}
+
+// NUEVA FUNCIÓN: Generar estadísticas por categoría
+async function obtenerEstadisticasPorCategoria() {
+    const resultado = await Producto.aggregate([
+        {
+            $group: {
+                _id: '$categoria',
+                cantidadProductos: { $sum: 1 },
+                stockTotal: { $sum: '$stock' },
+                valorTotal: { $sum: { $multiply: ['$precio', '$stock'] } },
+                productosStockBajo: { 
+                    $sum: { 
+                        $cond: [{ $eq: ['$alertaStockBajo', true] }, 1, 0] 
+                    } 
+                },
+                productosSinStock: { 
+                    $sum: { 
+                        $cond: [{ $eq: ['$stock', 0] }, 1, 0] 
+                    } 
+                },
+                ventasTotal: { $sum: '$vendidos' }
+            }
+        },
+        {
+            $project: {
+                categoria: '$_id',
+                cantidadProductos: 1,
+                stockTotal: 1,
+                valorTotal: 1,
+                productosStockBajo: 1,
+                productosSinStock: 1,
+                ventasTotal: 1,
+                promedioStock: { 
+                    $cond: [
+                        { $eq: ['$cantidadProductos', 0] },
+                        0,
+                        { $divide: ['$stockTotal', '$cantidadProductos'] }
+                    ]
+                },
+                porcentajeStockBajo: { 
+                    $cond: [
+                        { $eq: ['$cantidadProductos', 0] },
+                        0,
+                        { 
+                            $multiply: [
+                                { $divide: ['$productosStockBajo', '$cantidadProductos'] },
+                                100
+                            ] 
+                        }
+                    ]
+                }
+            }
+        },
+        {
+            $sort: { 'categoria': 1 }
+        }
+    ]);
+    
+    return resultado;
+}
+
+// NUEVA FUNCIÓN: Generar pronóstico de agotamiento
+async function generarPronosticoAgotamiento() {
+    const productos = await Producto.find({
+        stock: { $gt: 0 },
+        vendidos: { $gt: 0 }
+    }).select('_id nombre categoria stock vendidos precio').lean();
+    
+    // Cálculo simple basado en ventas históricas
+    // En una implementación más avanzada, se analizaría el historial detallado
+    const pronosticos = productos.map(producto => {
+        // Suponiendo que vendidos representa ventas en los últimos 30 días
+        const ventasDiarias = producto.vendidos / 30;
+        const diasHastaAgotamiento = ventasDiarias > 0 
+            ? Math.round(producto.stock / ventasDiarias)
+            : null;
+            
+        return {
+            _id: producto._id,
+            nombre: producto.nombre,
+            categoria: producto.categoria,
+            stock: producto.stock,
+            vendidos: producto.vendidos,
+            precio: producto.precio,
+            ventasDiarias,
+            diasHastaAgotamiento,
+            valorInventario: producto.stock * producto.precio,
+            prioridad: diasHastaAgotamiento !== null && diasHastaAgotamiento <= 15
+                ? 'ALTA'
+                : diasHastaAgotamiento !== null && diasHastaAgotamiento <= 30
+                    ? 'MEDIA'
+                    : 'BAJA'
+        };
+    });
+    
+    // Ordenar por días hasta agotamiento (priorizando los que se agotan pronto)
+    return pronosticos.sort((a, b) => {
+        // Null values last
+        if (a.diasHastaAgotamiento === null) return 1;
+        if (b.diasHastaAgotamiento === null) return -1;
+        
+        return a.diasHastaAgotamiento - b.diasHastaAgotamiento;
+    });
+}
+
+// Función mejorada para crear productos
 async function crearProducto(datos) {
     // Si es un combo, validar los productos incluidos
     if (datos.esCombo && datos.itemsCombo && datos.itemsCombo.length > 0) {
@@ -196,6 +515,17 @@ async function crearProducto(datos) {
         throw new Error('Los productos de limpieza deben tener stock mínimo de 1');
     }
     
+    // NUEVA FUNCIONALIDAD: Inicializar historialPrecios al crear producto
+    if (!datos.historialPrecios || !datos.historialPrecios.length) {
+        datos.historialPrecios = [{
+            precio: datos.precio,
+            fecha: new Date()
+        }];
+    }
+    
+    // Establecer alerta de stock bajo
+    datos.alertaStockBajo = datos.stock <= (datos.stockMinimo || 5);
+    
     const producto = new Producto(datos);
     const result = await producto.save();
     
@@ -205,6 +535,7 @@ async function crearProducto(datos) {
     return result;
 }
 
+// Función mejorada para actualizar productos
 async function actualizarProducto(id, datos) {
     // Si actualizamos items de combo, validar que existan
     if (datos.itemsCombo) {
@@ -234,6 +565,36 @@ async function actualizarProducto(id, datos) {
         }
     }
     
+    // NUEVA FUNCIONALIDAD: Si cambia el precio, actualizar en el historial
+    if (datos.precio !== undefined) {
+        const productoActual = await Producto.findById(id);
+        if (productoActual && productoActual.precio !== datos.precio) {
+            // Utilizamos $push para añadir un elemento al array sin traer todo el historial
+            await Producto.updateOne(
+                { _id: id },
+                { 
+                    $push: { 
+                        historialPrecios: {
+                            precio: datos.precio,
+                            fecha: new Date()
+                        } 
+                    }
+                }
+            );
+        }
+    }
+    
+    // NUEVA FUNCIONALIDAD: Actualizar alerta de stock bajo automáticamente
+    if (datos.stock !== undefined || datos.stockMinimo !== undefined) {
+        const productoActual = await Producto.findById(id);
+        if (productoActual) {
+            const nuevoStock = datos.stock !== undefined ? datos.stock : productoActual.stock;
+            const nuevoStockMinimo = datos.stockMinimo !== undefined ? datos.stockMinimo : productoActual.stockMinimo;
+            
+            datos.alertaStockBajo = nuevoStock <= nuevoStockMinimo;
+        }
+    }
+    
     const result = await Producto.findByIdAndUpdate(id, datos, { new: true, runValidators: true });
     
     // Invalidar caché del producto específico y listas
@@ -243,6 +604,7 @@ async function actualizarProducto(id, datos) {
     return result;
 }
 
+// Función para eliminar productos 
 async function eliminarProducto(id) { 
     // Verificar si hay combos que incluyen este producto
     const combosConProducto = await Producto.find({
@@ -264,6 +626,7 @@ async function eliminarProducto(id) {
     return result;
 }
 
+// Función para vender un producto
 async function venderProducto(id) {
     const producto = await Producto.findById(id);
     
@@ -309,8 +672,26 @@ async function venderProducto(id) {
             }
         }
         
+        // NUEVA FUNCIONALIDAD: Actualizar historial de ventas
+        const fechaActual = new Date();
+        producto.ultimaVenta = fechaActual;
+        
+        // Registrar venta con la cantidad actual (siempre 1)
+        if (!producto.historialVentas) {
+            producto.historialVentas = [];
+        }
+        
+        producto.historialVentas.push({
+            cantidad: 1,
+            fecha: fechaActual
+        });
+        
+        // Actualizar stock y contador de vendidos
         producto.stock -= 1;
         producto.vendidos += 1;
+        
+        // Actualizar alerta de stock bajo
+        producto.alertaStockBajo = producto.stock <= producto.stockMinimo;
         
         const result = await producto.save();
         
@@ -323,6 +704,7 @@ async function venderProducto(id) {
     return null;
 }
 
+// Función para cancelar una venta
 async function cancelarVenta(id) {
     const producto = await Producto.findById(id);
     if (!producto || producto.vendidos <= 0) {
@@ -347,6 +729,9 @@ async function cancelarVenta(id) {
     producto.stock += 1;
     producto.vendidos -= 1;
     
+    // Actualizar alerta de stock bajo
+    producto.alertaStockBajo = producto.stock <= producto.stockMinimo;
+    
     const result = await producto.save();
     
     // Invalidar caché del producto específico
@@ -355,7 +740,7 @@ async function cancelarVenta(id) {
     return result;
 }
 
-// Método para agregar o actualizar la imagen de un producto
+// Función para actualizar imagen
 async function updateImagen(productoId, imageBuffer) {
     try {
       const producto = await Producto.findById(productoId);
@@ -365,6 +750,13 @@ async function updateImagen(productoId, imageBuffer) {
       }
       
       producto.imagen = imageBuffer;
+      
+      // NUEVA FUNCIONALIDAD: Añadir metadatos de la imagen
+      producto.imagenInfo = {
+        tamano: imageBuffer.length,
+        ultimaActualizacion: new Date()
+      };
+      
       await producto.save();
       
       // Invalidar caché del producto específico
@@ -376,7 +768,7 @@ async function updateImagen(productoId, imageBuffer) {
     }
 }
 
-// Método para agregar o actualizar la imagen en formato Base64
+// Función para actualizar imagen en formato base64
 async function updateImagenBase64(productoId, base64String) {
     try {
         const producto = await Producto.findById(productoId);
@@ -392,9 +784,12 @@ async function updateImagenBase64(productoId, base64String) {
         
         // Extraer la parte de datos del base64 si tiene el formato data:image
         let base64Data = base64String;
+        let mimetype = 'image/png'; // Por defecto
+        
         if (base64String.startsWith('data:image/')) {
             const matches = base64String.match(/^data:image\/([a-zA-Z0-9+/]+);base64,(.+)$/);
             if (matches && matches.length === 3) {
+                mimetype = `image/${matches[1]}`;
                 base64Data = matches[2];
             } else {
                 throw new Error('Formato base64 inválido');
@@ -405,6 +800,14 @@ async function updateImagenBase64(productoId, base64String) {
         const imageBuffer = Buffer.from(base64Data, 'base64');
         
         producto.imagen = imageBuffer;
+        
+        // NUEVA FUNCIONALIDAD: Añadir metadatos de la imagen
+        producto.imagenInfo = {
+            mimetype,
+            tamano: imageBuffer.length,
+            ultimaActualizacion: new Date()
+        };
+        
         await producto.save();
         
         // Invalidar caché del producto específico
@@ -415,11 +818,11 @@ async function updateImagenBase64(productoId, base64String) {
         throw error;
     }
 }
-  
-// Método para obtener la imagen de un producto
+
+// Función para obtener imagen
 async function getImagen(productoId) {
     try {
-        const producto = await Producto.findById(productoId).select('imagen');
+        const producto = await Producto.findById(productoId).select('imagen imagenInfo');
         
         if (!producto) {
             throw new Error('Producto no encontrado');
@@ -435,10 +838,10 @@ async function getImagen(productoId) {
     }
 }
 
-// Método para obtener la imagen en formato base64
+// Función para obtener imagen en formato base64
 async function getImagenBase64(productoId) {
     try {
-        const producto = await Producto.findById(productoId).select('imagen');
+        const producto = await Producto.findById(productoId).select('imagen imagenInfo');
         
         if (!producto) {
             throw new Error('Producto no encontrado');
@@ -450,17 +853,21 @@ async function getImagenBase64(productoId) {
         
         // Convertir buffer a base64
         const base64Image = producto.imagen.toString('base64');
-        // Intentar detectar el tipo de imagen (por simplicidad asumimos PNG)
-        // En una implementación más robusta debería almacenarse el mimetype junto con la imagen
-        const base64String = `data:image/png;base64,${base64Image}`;
+        
+        // Usar el tipo MIME guardado o asumir PNG por defecto
+        const mimetype = producto.imagenInfo && producto.imagenInfo.mimetype
+            ? producto.imagenInfo.mimetype
+            : 'image/png';
+            
+        const base64String = `data:${mimetype};base64,${base64Image}`;
         
         return base64String;
     } catch (error) {
         throw error;
     }
 }
-  
-// Método para eliminar la imagen de un producto
+
+// Función para eliminar imagen
 async function deleteImagen(productoId) {
     try {
         const producto = await Producto.findById(productoId);
@@ -470,6 +877,7 @@ async function deleteImagen(productoId) {
         }
         
         producto.imagen = undefined;
+        producto.imagenInfo = undefined;
         await producto.save();
         
         // Invalidar caché del producto específico
@@ -481,7 +889,7 @@ async function deleteImagen(productoId) {
     }
 }
 
-// Nueva función para obtener precios totales de un combo
+// Función para calcular precio de combo
 async function calcularPrecioCombo(comboId) {
     const combo = await Producto.findById(comboId).populate('itemsCombo.productoId');
     
@@ -500,6 +908,92 @@ async function calcularPrecioCombo(comboId) {
     return precioTotal;
 }
 
+// NUEVA FUNCIÓN: Exportar datos para reportes CSV/Excel
+async function exportarDatosProductos(formato = 'csv', filtros = {}) {
+    // Obtener productos según filtros
+    const productos = await Producto.find(filtros)
+        .sort({ categoria: 1, subCategoria: 1, nombre: 1 })
+        .lean();
+    
+    // Preparar datos para formato tabular
+    return productos.map(producto => ({
+        id: producto._id.toString(),
+        nombre: producto.nombre,
+        descripcion: producto.descripcion || '',
+        categoria: producto.categoria,
+        subCategoria: producto.subCategoria,
+        marca: producto.marca || '',
+        proveedor: producto.proveedor?.nombre || '',
+        precio: producto.precio,
+        stock: producto.stock,
+        stockMinimo: producto.stockMinimo || 0,
+        vendidos: producto.vendidos || 0,
+        alertaStockBajo: producto.alertaStockBajo ? 'Sí' : 'No',
+        esCombo: producto.esCombo ? 'Sí' : 'No',
+        estado: producto.estado || 'activo',
+        fechaCreacion: producto.createdAt,
+        ultimaActualizacion: producto.updatedAt
+    }));
+}
+
+// NUEVA FUNCIÓN: Actualizar estadísticas de productos
+async function actualizarEstadisticasProductos() {
+    // Esta función podría ejecutarse periódicamente (cron job)
+    console.log('Actualizando estadísticas de productos...');
+    
+    // Obtener todos los productos activos
+    const productos = await Producto.find({ estado: 'activo' });
+    
+    // Actualizar estadísticas para cada producto
+    for (const producto of productos) {
+        try {
+            // Calcular tendencia de ventas si hay suficientes datos
+            if (producto.historialVentas && producto.historialVentas.length > 0) {
+                // Fecha actual
+                const ahora = new Date();
+                
+                // Calcular ventas diarias (últimos 30 días)
+                const ventasUltimos30Dias = producto.historialVentas.filter(v => {
+                    const diff = (ahora - v.fecha) / (1000 * 60 * 60 * 24);
+                    return diff <= 30;
+                }).reduce((total, v) => total + v.cantidad, 0);
+                
+                // Calcular ventas semanales (últimos 7 días)
+                const ventasUltimos7Dias = producto.historialVentas.filter(v => {
+                    const diff = (ahora - v.fecha) / (1000 * 60 * 60 * 24);
+                    return diff <= 7;
+                }).reduce((total, v) => total + v.cantidad, 0);
+                
+                // Calcular tendencias
+                producto.tendenciaVentas = {
+                    diaria: ventasUltimos7Dias / 7,
+                    semanal: ventasUltimos7Dias,
+                    mensual: ventasUltimos30Dias
+                };
+                
+                // Calcular días hasta agotamiento
+                if (producto.tendenciaVentas.diaria > 0) {
+                    producto.diasHastaAgotamiento = Math.round(producto.stock / producto.tendenciaVentas.diaria);
+                }
+            }
+            
+            // Guardar cambios
+            await producto.save();
+            
+        } catch (error) {
+            console.error(`Error al actualizar estadísticas para producto ${producto._id}:`, error);
+        }
+    }
+    
+    console.log('Actualización de estadísticas completada');
+    
+    // Invalida toda la caché para reflejar los cambios
+    invalidarCache();
+    
+    return { actualizados: productos.length };
+}
+
+// Exportar todas las funciones
 module.exports = {
     obtenerTodos,
     obtenerPorId,
@@ -517,5 +1011,16 @@ module.exports = {
     obtenerProductosPorSeccion,
     obtenerProductosPaginados,
     calcularPrecioCombo,
-    invalidarCache
+    invalidarCache,
+    obtenerProductosPorMarca,
+    obtenerProductosPorProveedor,
+    obtenerProductosPorRangoPrecio,
+    obtenerProductosStockBajo,
+    obtenerProductosSinStock,
+    obtenerProductosMasVendidos,
+    generarReporteInventario,
+    obtenerEstadisticasPorCategoria,
+    generarPronosticoAgotamiento,
+    exportarDatosProductos,
+    actualizarEstadisticasProductos
 };

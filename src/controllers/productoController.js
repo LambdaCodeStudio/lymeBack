@@ -1,69 +1,107 @@
 // src/controllers/productoController.js
 const productoLogic = require('../logic/productoLogic');
+const Producto = require('../models/productoSchema');
+const mongoose = require('mongoose');
 
+// Función mejorada para obtener productos con múltiples filtros
 async function obtenerTodos(req, res) {
     try {
-      // Implementar paginación
-      const page = parseInt(req.query.page) || 1;
-      const limit = parseInt(req.query.limit) || 20;
-      
-      // Obtener parámetros de filtrado
-      const searchTerm = req.query.search || '';
-      const category = req.query.category || '';
-      
-      // Nuevos parámetros para stock bajo y sin stock
-      const showLowStock = req.query.lowStock === 'true';
-      const showNoStock = req.query.noStock === 'true';
-      const threshold = parseInt(req.query.threshold) || 10;
-      
-      // Obtener sección del usuario desde el token de autenticación
-      const userSeccion = req.user ? req.user.secciones : null;
-      
-      // Construir filtro base
-      let query = {};
-      
-      // Priorizar filtros de stock sobre otros filtros
-      if (showNoStock) {
-        // Filtro para productos con stock = 0
-        query.stock = 0;
-      } else if (showLowStock) {
-        // Filtro para productos con stock bajo (menor o igual al umbral, pero mayor que 0)
-        query.stock = { $lte: threshold, $gt: 0 };
-      } else {
-        // Aplicar filtros normales cuando no se filtran por stock
+        // Paginación mejorada
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 20;
         
-        // Filtrar por categoría si se especifica
-        if (category && category !== 'all') {
-          query.categoria = category;
-        } else if (userSeccion && userSeccion !== 'ambos') {
-          query.categoria = userSeccion;
+        // Ordenamiento
+        const sortBy = req.query.sortBy || 'nombre';
+        const sortDir = req.query.sortDir === 'desc' ? -1 : 1;
+        
+        // Filtros básicos
+        const searchTerm = req.query.search || '';
+        const category = req.query.category || '';
+        const subcategory = req.query.subcategory || '';
+        const marca = req.query.marca || '';
+        const proveedor = req.query.proveedor || '';
+        
+        // Filtros avanzados
+        const showLowStock = req.query.lowStock === 'true';
+        const showNoStock = req.query.noStock === 'true';
+        const threshold = parseInt(req.query.threshold) || 10;
+        const precioMin = req.query.precioMin ? parseFloat(req.query.precioMin) : undefined;
+        const precioMax = req.query.precioMax ? parseFloat(req.query.precioMax) : undefined;
+        const estado = req.query.estado;
+        const updatedAfter = req.query.updatedAfter;
+        
+        // Obtener sección del usuario desde el token de autenticación
+        const userSeccion = req.user ? req.user.secciones : null;
+        
+        // Construir filtro base
+        let query = {};
+        
+        // Priorizar filtros de stock sobre otros filtros
+        if (showNoStock) {
+            query.noStock = true;
+        } else if (showLowStock) {
+            query.lowStock = true;
+            query.threshold = threshold;
+        } else {
+            // Filtros jerárquicos
+            if (category && category !== 'all') {
+                query.categoria = category;
+            } else if (userSeccion && userSeccion !== 'ambos') {
+                query.categoria = userSeccion;
+            }
+            
+            if (subcategory && subcategory !== 'all') {
+                query.subCategoria = subcategory;
+            }
+            
+            if (marca && marca !== 'all') {
+                query.marca = marca;
+            }
+            
+            if (proveedor && proveedor !== 'all') {
+                query.proveedor = proveedor;
+            }
+            
+            // Filtro de precio
+            if (precioMin !== undefined || precioMax !== undefined) {
+                query.precioMin = precioMin;
+                query.precioMax = precioMax;
+            }
+            
+            // Filtro de estado
+            if (estado && estado !== 'all') {
+                query.estado = estado;
+            }
+            
+            // Filtro de fecha de actualización
+            if (updatedAfter) {
+                query.updatedAfter = updatedAfter;
+            }
+            
+            // Filtro de búsqueda por texto
+            if (searchTerm) {
+                query.texto = searchTerm;
+            }
         }
         
-        // Filtrar por término de búsqueda
-        if (searchTerm) {
-          query.$or = [
-            { nombre: { $regex: searchTerm, $options: 'i' } },
-            { descripcion: { $regex: searchTerm, $options: 'i' } },
-            { proovedorInfo: { $regex: searchTerm, $options: 'i' } }
-          ];
-        }
-      }
-      
-      // Obtener productos con paginación y filtros
-      const result = await productoLogic.obtenerProductosPaginados(
-        query, 
-        page, 
-        limit, 
-        userSeccion
-      );
-      
-      res.json(result);
+        // Obtener productos con paginación y filtros
+        const result = await productoLogic.obtenerProductosPaginados(
+            query, 
+            page, 
+            limit, 
+            userSeccion,
+            sortBy,
+            sortDir
+        );
+        
+        res.json(result);
     } catch (error) {
-      console.error('Error en obtenerTodos:', error);
-      res.status(500).json({ error: 'Error al obtener los productos' });
+        console.error('Error en obtenerTodos:', error);
+        res.status(500).json({ error: 'Error al obtener los productos', details: error.message });
     }
-  }
+}
 
+// Función para obtener un producto por ID
 async function obtenerPorId(req, res) {
     try {
         const producto = await productoLogic.obtenerPorId(req.params.id);
@@ -85,10 +123,11 @@ async function obtenerPorId(req, res) {
         if (error.kind === 'ObjectId') {
             return res.status(400).json({ error: 'ID de producto inválido' });
         }
-        res.status(500).json({ error: 'Error al obtener el producto' });
+        res.status(500).json({ error: 'Error al obtener el producto', details: error.message });
     }
 }
 
+// Función mejorada para crear productos
 async function crearProducto(req, res) {
     try {
         // Validaciones adicionales
@@ -127,6 +166,7 @@ async function crearProducto(req, res) {
     }
 }
 
+// Función mejorada para actualizar productos
 async function actualizarProducto(req, res) {
     try {
         // Validaciones adicionales
@@ -183,6 +223,7 @@ async function actualizarProducto(req, res) {
     }
 }
 
+// Función para eliminar productos
 async function eliminarProducto(req, res) {
     try {
         // Verificar si el producto existe
@@ -210,6 +251,7 @@ async function eliminarProducto(req, res) {
     }
 }
 
+// Función para vender un producto
 async function venderProducto(req, res) {
     try {
         // Verificar si el producto existe y pertenece a la sección del usuario
@@ -249,6 +291,7 @@ async function venderProducto(req, res) {
     }
 }
 
+// Función para cancelar una venta
 async function cancelarVenta(req, res) {
     try {
         // Verificar si el producto existe y pertenece a la sección del usuario
@@ -282,6 +325,7 @@ async function cancelarVenta(req, res) {
     }
 }
 
+// Función para subir imagen
 async function uploadImagen(req, res) {
     try {
       const { id } = req.params;
@@ -319,7 +363,7 @@ async function uploadImagen(req, res) {
     }
 }
 
-// Controlador para subir imagen en formato base64
+// Función para subir imagen en formato base64
 async function uploadImagenBase64(req, res) {
     try {
       const { id } = req.params;
@@ -357,8 +401,8 @@ async function uploadImagenBase64(req, res) {
       });
     }
 }
-  
-// Controlador para obtener una imagen
+
+// Función para obtener imagen
 async function getImagen(req, res) {
     try {
       const { id } = req.params;
@@ -441,7 +485,7 @@ async function getImagen(req, res) {
     }
 }
 
-// Controlador para obtener imagen en formato base64
+// Función para obtener imagen en formato base64
 async function getImagenBase64(req, res) {
     try {
       const { id } = req.params;
@@ -491,8 +535,8 @@ async function getImagenBase64(req, res) {
       });
     }
 }
-  
-// Controlador para eliminar una imagen
+
+// Función para eliminar imagen
 async function deleteImagen(req, res) {
     try {
       const { id } = req.params;
@@ -523,7 +567,7 @@ async function deleteImagen(req, res) {
     }
 }
 
-// Nuevo controlador para calcular precio total de un combo
+// Función para calcular precio de combo
 async function calcularPrecioCombo(req, res) {
     try {
         const { id } = req.params;
@@ -563,22 +607,219 @@ async function calcularPrecioCombo(req, res) {
     }
 }
 
+// Función para obtener estadísticas de stock bajo
 async function getStockStats(req, res) {
     try {
       // Obtener el umbral desde query params, por defecto 10
       const threshold = parseInt(req.query.threshold) || 10;
+      const userSeccion = req.user ? req.user.secciones : null;
       
       // Consultar productos con stock bajo
-      const count = await Producto.countDocuments({ 
-        stock: { $lte: threshold, $gt: 0 } 
-      });
+      const productosStockBajo = await productoLogic.obtenerProductosStockBajo(threshold, userSeccion);
       
-      res.json({ count });
+      res.json({ 
+          count: productosStockBajo.length,
+          threshold
+      });
     } catch (error) {
       console.error('Error al obtener estadísticas de stock:', error);
       res.status(500).json({ error: 'Error al obtener estadísticas de stock' });
     }
-  }
+}
+
+// NUEVAS FUNCIONES
+
+// Función para obtener productos por marca
+async function obtenerProductosPorMarca(req, res) {
+    try {
+        const { marca } = req.params;
+        const userSeccion = req.user ? req.user.secciones : null;
+        
+        const productos = await productoLogic.obtenerProductosPorMarca(marca, userSeccion);
+        
+        res.json(productos);
+    } catch (error) {
+        console.error('Error al obtener productos por marca:', error);
+        res.status(500).json({ error: 'Error al obtener productos por marca' });
+    }
+}
+
+// Función para obtener productos por proveedor
+async function obtenerProductosPorProveedor(req, res) {
+    try {
+        const { proveedor } = req.params;
+        const userSeccion = req.user ? req.user.secciones : null;
+        
+        const productos = await productoLogic.obtenerProductosPorProveedor(proveedor, userSeccion);
+        
+        res.json(productos);
+    } catch (error) {
+        console.error('Error al obtener productos por proveedor:', error);
+        res.status(500).json({ error: 'Error al obtener productos por proveedor' });
+    }
+}
+
+// Función para obtener productos por rango de precio
+async function obtenerProductosPorRangoPrecio(req, res) {
+    try {
+        const { min, max } = req.query;
+        const precioMin = parseFloat(min) || 0;
+        const precioMax = parseFloat(max) || Number.MAX_SAFE_INTEGER;
+        const userSeccion = req.user ? req.user.secciones : null;
+        
+        const productos = await productoLogic.obtenerProductosPorRangoPrecio(precioMin, precioMax, userSeccion);
+        
+        res.json(productos);
+    } catch (error) {
+        console.error('Error al obtener productos por rango de precio:', error);
+        res.status(500).json({ error: 'Error al obtener productos por rango de precio' });
+    }
+}
+
+// Función para obtener productos con stock bajo
+async function obtenerProductosStockBajo(req, res) {
+    try {
+        const threshold = req.query.threshold ? parseInt(req.query.threshold) : null;
+        const userSeccion = req.user ? req.user.secciones : null;
+        
+        const productos = await productoLogic.obtenerProductosStockBajo(threshold, userSeccion);
+        
+        res.json(productos);
+    } catch (error) {
+        console.error('Error al obtener productos con stock bajo:', error);
+        res.status(500).json({ error: 'Error al obtener productos con stock bajo' });
+    }
+}
+
+// Función para obtener productos sin stock
+async function obtenerProductosSinStock(req, res) {
+    try {
+        const userSeccion = req.user ? req.user.secciones : null;
+        
+        const productos = await productoLogic.obtenerProductosSinStock(userSeccion);
+        
+        res.json(productos);
+    } catch (error) {
+        console.error('Error al obtener productos sin stock:', error);
+        res.status(500).json({ error: 'Error al obtener productos sin stock' });
+    }
+}
+
+// Función para obtener productos más vendidos
+async function obtenerProductosMasVendidos(req, res) {
+    try {
+        const limite = req.query.limite ? parseInt(req.query.limite) : 10;
+        const userSeccion = req.user ? req.user.secciones : null;
+        
+        const productos = await productoLogic.obtenerProductosMasVendidos(limite, userSeccion);
+        
+        res.json(productos);
+    } catch (error) {
+        console.error('Error al obtener productos más vendidos:', error);
+        res.status(500).json({ error: 'Error al obtener productos más vendidos' });
+    }
+}
+
+// Función para generar reporte de inventario
+async function generarReporteInventario(req, res) {
+    try {
+        const userSeccion = req.user ? req.user.secciones : null;
+        
+        const reporte = await productoLogic.generarReporteInventario(userSeccion);
+        
+        res.json(reporte);
+    } catch (error) {
+        console.error('Error al generar reporte de inventario:', error);
+        res.status(500).json({ error: 'Error al generar reporte de inventario' });
+    }
+}
+
+// Función para obtener estadísticas por categoría
+async function obtenerEstadisticasPorCategoria(req, res) {
+    try {
+        const estadisticas = await productoLogic.obtenerEstadisticasPorCategoria();
+        
+        res.json(estadisticas);
+    } catch (error) {
+        console.error('Error al obtener estadísticas por categoría:', error);
+        res.status(500).json({ error: 'Error al obtener estadísticas por categoría' });
+    }
+}
+
+// Función para generar pronóstico de agotamiento
+async function generarPronosticoAgotamiento(req, res) {
+    try {
+        const pronostico = await productoLogic.generarPronosticoAgotamiento();
+        
+        res.json(pronostico);
+    } catch (error) {
+        console.error('Error al generar pronóstico de agotamiento:', error);
+        res.status(500).json({ error: 'Error al generar pronóstico de agotamiento' });
+    }
+}
+
+// Función para exportar datos de productos
+async function exportarDatosProductos(req, res) {
+    try {
+        const { formato = 'csv' } = req.query;
+        const userSeccion = req.user ? req.user.secciones : null;
+        
+        // Construir filtros según permisos de usuario
+        const filtros = {};
+        if (userSeccion && userSeccion !== 'ambos') {
+            filtros.categoria = userSeccion;
+        }
+        
+        // Añadir filtros adicionales desde query params
+        if (req.query.categoria) filtros.categoria = req.query.categoria;
+        if (req.query.subCategoria) filtros.subCategoria = req.query.subCategoria;
+        if (req.query.marca) filtros.marca = req.query.marca;
+        if (req.query.stock === 'bajo') filtros.alertaStockBajo = true;
+        if (req.query.stock === 'sin') filtros.stock = 0;
+        
+        const datos = await productoLogic.exportarDatosProductos(formato, filtros);
+        
+        // Preparar la respuesta según el formato solicitado
+        if (formato === 'json') {
+            return res.json(datos);
+        }
+        
+        // Para formato CSV, convertir los datos
+        const { Parser } = require('json2csv');
+        const fields = Object.keys(datos[0] || {});
+        const json2csv = new Parser({ fields });
+        const csv = json2csv.parse(datos);
+        
+        // Configurar cabeceras para descarga
+        res.header('Content-Type', 'text/csv');
+        res.attachment(`productos_${new Date().toISOString().split('T')[0]}.csv`);
+        
+        return res.send(csv);
+    } catch (error) {
+        console.error('Error al exportar datos de productos:', error);
+        res.status(500).json({ error: 'Error al exportar datos de productos' });
+    }
+}
+
+// Función para actualizar estadísticas de productos
+async function actualizarEstadisticasProductos(req, res) {
+    try {
+        // Verificar permisos (solo administradores)
+        if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'supervisor_de_supervisores')) {
+            return res.status(403).json({ error: 'No tiene permisos para realizar esta acción' });
+        }
+        
+        const resultado = await productoLogic.actualizarEstadisticasProductos();
+        
+        res.json({
+            mensaje: 'Estadísticas de productos actualizadas correctamente',
+            detalles: resultado
+        });
+    } catch (error) {
+        console.error('Error al actualizar estadísticas de productos:', error);
+        res.status(500).json({ error: 'Error al actualizar estadísticas de productos' });
+    }
+}
 
 module.exports = {
     obtenerTodos,
@@ -594,5 +835,16 @@ module.exports = {
     uploadImagenBase64,
     getImagenBase64,
     calcularPrecioCombo,
-    getStockStats
+    getStockStats,
+    obtenerProductosPorMarca,
+    obtenerProductosPorProveedor,
+    obtenerProductosPorRangoPrecio,
+    obtenerProductosStockBajo,
+    obtenerProductosSinStock,
+    obtenerProductosMasVendidos,
+    generarReporteInventario,
+    obtenerEstadisticasPorCategoria,
+    generarPronosticoAgotamiento,
+    exportarDatosProductos,
+    actualizarEstadisticasProductos
 };
