@@ -4,6 +4,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const ROLES = require('../constants/roles');
 const mongoose = require('mongoose');
+const { deleteCacheKey } = require('../middleware/cache');
 
 /**
  * Crea el usuario administrador inicial si no existe
@@ -247,6 +248,14 @@ const register = async (req, res) => {
     // Generar token JWT
     const token = generateToken(user);
     
+    // NUEVO: Invalidar caché de supervisores si se creó un supervisor
+    if (user.role === ROLES.SUPERVISOR) {
+      console.log('Invalidando caché de supervisores tras crear nuevo supervisor');
+      if (typeof deleteCacheKey === 'function') {
+        deleteCacheKey('supervisors_list');
+      }
+    }
+    
     // Respuesta exitosa
     res.status(201).json({ 
       success: true,
@@ -431,9 +440,6 @@ const getUserById = async (req, res) => {
 
 /**
  * Actualiza un usuario existente
- * @param {Object} req - Objeto de solicitud Express
- * @param {Object} res - Objeto de respuesta Express
- * @returns {Object} - Usuario actualizado o error
  */
 const updateUser = async (req, res) => {
   try {
@@ -522,6 +528,19 @@ const updateUser = async (req, res) => {
       });
     }
     
+    // NUEVO: Verificar si se ha cambiado el rol a/desde supervisor
+    const roleChanged = req.body.role && user.role !== req.body.role;
+    const wasSupervisor = user.role === ROLES.SUPERVISOR;
+    const isSupervisor = updatedUser.role === ROLES.SUPERVISOR;
+    
+    // Si se cambió de o a supervisor, invalidar la caché
+    if (roleChanged && (wasSupervisor || isSupervisor)) {
+      console.log('Invalidando caché de supervisores tras actualizar rol de usuario');
+      if (typeof deleteCacheKey === 'function') {
+        deleteCacheKey('supervisors_list');
+      }
+    }
+    
     // Registrar la actualización
     console.log(`Usuario ${updatedUser._id} actualizado por ${req.user.id}`);
 
@@ -601,6 +620,9 @@ const deleteUser = async (req, res) => {
       console.log(`${clientesActualizados} clientes preparados para reasignación`);
     }
 
+    // Guardar info sobre si era supervisor para invalidar caché después
+    const wasSupervisor = user.role === ROLES.SUPERVISOR;
+    
     // Eliminar el usuario
     const deleteResult = await User.deleteOne({ _id: user._id });
     
@@ -609,6 +631,14 @@ const deleteUser = async (req, res) => {
         success: false, 
         message: 'Error al eliminar usuario' 
       });
+    }
+    
+    // NUEVO: Invalidar caché si era un supervisor
+    if (wasSupervisor) {
+      console.log('Invalidando caché de supervisores tras eliminar supervisor');
+      if (typeof deleteCacheKey === 'function') {
+        deleteCacheKey('supervisors_list');
+      }
     }
     
     res.json({ 
@@ -720,6 +750,9 @@ const toggleUserStatus = async (req, res) => {
       });
     }
 
+    // Guardar si es supervisor para invalidar caché después
+    const isSupervisor = user.role === ROLES.SUPERVISOR;
+    
     // Actualizar estado
     user.isActive = isActivating;
     
@@ -732,6 +765,14 @@ const toggleUserStatus = async (req, res) => {
 
     await user.save();
 
+    // NUEVO: Invalidar caché si es un supervisor
+    if (isSupervisor) {
+      console.log(`Invalidando caché de supervisores tras ${isActivating ? 'activar' : 'desactivar'} supervisor`);
+      if (typeof deleteCacheKey === 'function') {
+        deleteCacheKey('supervisors_list');
+      }
+    }
+    
     // Obtener usuario actualizado con relaciones
     const updatedUser = await User.findById(id)
       .select('-password')
@@ -751,6 +792,7 @@ const toggleUserStatus = async (req, res) => {
     });
   }
 };
+
 
 /**
  * Reactiva un operario temporal cuya sesión ha expirado
@@ -826,9 +868,12 @@ const reactivateTemporaryOperator = async (req, res) => {
  */
 const getSupervisors = async (req, res) => {
   try {
+    // MODIFICADO: Añadir parámetro para forzar ignorar caché
+    const skipCache = req.query.fresh === 'true';
+    
     // Cache de supervisores (5 minutos)
     const cacheKey = 'supervisors_list';
-    const cachedData = global.cache?.get(cacheKey);
+    const cachedData = !skipCache && global.cache?.get(cacheKey);
     
     if (cachedData) {
       return res.json({
@@ -843,7 +888,7 @@ const getSupervisors = async (req, res) => {
       role: ROLES.SUPERVISOR, 
       isActive: true 
     })
-    .select('_id usuario nombre apellido role')
+    .select('_id usuario nombre apellido role secciones')
     .sort({ nombre: 1, apellido: 1 })
     .lean();
     
@@ -855,6 +900,7 @@ const getSupervisors = async (req, res) => {
     res.json({
       success: true,
       count: supervisors.length,
+      fromCache: false,
       supervisors
     });
   } catch (error) {

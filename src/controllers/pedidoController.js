@@ -379,6 +379,9 @@ exports.getPedidosOrdenados = async (req, res) => {
 /**
  * Crea un nuevo pedido
  */
+/**
+ * Crea un nuevo pedido
+ */
 exports.createPedido = async (req, res) => {
     try {
         // Validar campos requeridos
@@ -413,6 +416,55 @@ exports.createPedido = async (req, res) => {
             } catch (err) {
                 console.error('Error al obtener supervisor de subServicio:', err);
                 // Continuar sin asignar supervisor
+            }
+        }
+
+        // Si es un operario creando un pedido para otro usuario
+        if (req.user && req.user.id && req.user.role === 'operario' && req.body.userId && req.user.id !== req.body.userId) {
+            // Configurar los metadatos del pedido
+            req.body.metadata = {
+                creadoPorOperario: true,
+                operarioId: req.user.id,
+                operarioNombre: req.user.nombre || req.user.usuario || req.user.email,
+                fechaCreacion: new Date().toISOString()
+            };
+            
+            // Si hay supervisor asignado, incluirlo en los metadatos
+            if (req.body.supervisorId) {
+                try {
+                    const User = mongoose.model('User');
+                    const supervisor = await User.findById(req.body.supervisorId);
+                    if (supervisor) {
+                        req.body.metadata.supervisorId = supervisor._id;
+                        req.body.metadata.supervisorNombre = supervisor.nombre || supervisor.usuario || supervisor.email;
+                    }
+                } catch (err) {
+                    console.error('Error al obtener información del supervisor:', err);
+                }
+            }
+        }
+        
+        // Si es un pedido creado por un operario para sí mismo, pero quiere marcar explícitamente
+        if (req.user && req.user.role === 'operario' && req.body.creadoPorOperario) {
+            req.body.metadata = {
+                creadoPorOperario: true,
+                operarioId: req.user.id,
+                operarioNombre: req.user.nombre || req.user.usuario || req.user.email,
+                fechaCreacion: new Date().toISOString()
+            };
+            
+            // Incluir supervisor en los metadatos si está disponible
+            if (req.body.supervisorId) {
+                try {
+                    const User = mongoose.model('User');
+                    const supervisor = await User.findById(req.body.supervisorId);
+                    if (supervisor) {
+                        req.body.metadata.supervisorId = supervisor._id;
+                        req.body.metadata.supervisorNombre = supervisor.nombre || supervisor.usuario || supervisor.email;
+                    }
+                } catch (err) {
+                    console.error('Error al obtener información del supervisor:', err);
+                }
             }
         }
 
@@ -605,6 +657,67 @@ exports.rechazarPedido = async (req, res) => {
         console.error('Error al rechazar pedido:', error);
         res.status(500).json({ 
             mensaje: 'Error al rechazar pedido', 
+            error: error.message 
+        });
+    }
+};
+
+/**
+ * Obtiene pedidos creados por un operario específico
+ */
+exports.getPedidosByOperarioId = async (req, res) => {
+    try {
+        // Validar que el ID sea un ObjectId válido
+        if (!mongoose.Types.ObjectId.isValid(req.params.operarioId)) {
+            return res.status(400).json({ mensaje: 'ID de operario inválido' });
+        }
+
+        const pedidos = await Pedido.find({
+            'metadata.creadoPorOperario': true,
+            'metadata.operarioId': req.params.operarioId
+        })
+        .populate('userId', 'nombre email usuario apellido')
+        .populate('supervisorId', 'nombre email usuario apellido')
+        .populate('productos.productoId')
+        .populate('cliente.clienteId')
+        .sort({ fecha: -1 });
+        
+        res.json(pedidos);
+    } catch (error) {
+        console.error('Error al obtener pedidos por operarioId:', error);
+        res.status(500).json({ 
+            mensaje: 'Error al obtener pedidos creados por operario', 
+            error: error.message 
+        });
+    }
+};
+
+/**
+ * Obtiene pedidos rechazados que fueron creados por un operario específico
+ */
+exports.getPedidosRechazadosByOperarioId = async (req, res) => {
+    try {
+        // Validar que el ID sea un ObjectId válido
+        if (!mongoose.Types.ObjectId.isValid(req.params.operarioId)) {
+            return res.status(400).json({ mensaje: 'ID de operario inválido' });
+        }
+
+        const pedidos = await Pedido.find({
+            'metadata.creadoPorOperario': true,
+            'metadata.operarioId': req.params.operarioId,
+            'estado': 'rechazado'
+        })
+        .populate('userId', 'nombre email usuario apellido')
+        .populate('supervisorId', 'nombre email usuario apellido')
+        .populate('productos.productoId')
+        .populate('cliente.clienteId')
+        .sort({ fecha: -1 });
+        
+        res.json(pedidos);
+    } catch (error) {
+        console.error('Error al obtener pedidos rechazados por operarioId:', error);
+        res.status(500).json({ 
+            mensaje: 'Error al obtener pedidos rechazados creados por operario', 
             error: error.message 
         });
     }

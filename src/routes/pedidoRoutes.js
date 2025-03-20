@@ -19,6 +19,8 @@ router.get('/estadisticas', pedidoController.getPedidosEstadisticas);
 
 //Pedidos rechazados
 router.post('/:id/rechazar', auth, pedidoController.rechazarPedido);
+router.get('/operario/:operarioId', pedidoController.getPedidosByOperarioId);
+router.get('/operario/:operarioId/rechazados', pedidoController.getPedidosRechazadosByOperarioId);
 
 // Rutas para filtros específicos (DEBEN IR ANTES DE LAS RUTAS CON PARÁMETROS VARIABLES)
 router.get('/fecha', pedidoController.getPedidosByFecha);
