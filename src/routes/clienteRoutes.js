@@ -1,12 +1,11 @@
-// src/routes/clienteRoutes.js
 const express = require('express');
 const router = express.Router();
 const clienteController = require('../controllers/clienteController');
 const { auth } = require('../middleware/auth');
-const { validateObjectId } = require('../middleware/validateObjectId'); // Asumiendo que existe este middleware
+const { validateObjectId } = require('../middleware/validateObjectId');
 
-// Aplicar middleware de autenticación a todas las rutas si es necesario
-// router.use(auth);
+// Aplicar middleware de autenticación a todas las rutas
+router.use(auth);
 
 // Rutas principales para clientes
 router.get('/', clienteController.getClientes);
@@ -18,6 +17,9 @@ router.get('/user/:userId', validateObjectId('userId'), clienteController.getCli
 router.get('/supervisor/:supervisorId', validateObjectId('supervisorId'), clienteController.getClientesBySupervisorId);
 router.get('/subservicios/supervisor/:supervisorId', validateObjectId('supervisorId'), clienteController.getSubServiciosBySupervisorId);
 router.get('/subservicios/sin-supervisor', clienteController.getSubServiciosSinSupervisor);
+
+// NUEVA RUTA PARA OPERARIOS - Obtener clientes del supervisor asignado al operario
+router.get('/mi-supervisor', clienteController.getClientesByOperarioSupervisor);
 
 // Ruta para obtener un cliente específico
 router.get('/:id', validateObjectId('id'), clienteController.getClienteById);
@@ -36,7 +38,7 @@ router.delete('/:clienteId/subservicio/:subServicioId',
     [validateObjectId('clienteId'), validateObjectId('subServicioId')], 
     clienteController.deleteSubServicio);
 
-// NUEVAS RUTAS PARA ASIGNACIÓN DE SUPERVISORES A SUBSERVICIOS
+// Rutas para asignación de supervisores a subservicios
 router.post('/:clienteId/subservicio/:subServicioId/supervisor', 
     [validateObjectId('clienteId'), validateObjectId('subServicioId')], 
     clienteController.assignSupervisorToSubServicio);

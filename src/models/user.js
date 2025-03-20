@@ -1,4 +1,3 @@
-// src/models/user.js
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const ROLES = require('../constants/roles');
@@ -69,6 +68,19 @@ const userSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     index: true // Indexar para búsquedas por creador
+  },
+  // Nuevo campo para supervisores de operarios
+  supervisorId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    index: true,
+    validate: {
+      validator: function(v) {
+        // Solo permitir supervisorId para operarios
+        return this.role === ROLES.OPERARIO;
+      },
+      message: 'El supervisorId solo es válido para operarios'
+    }
   },
   expiresAt: {
     type: Date,

@@ -159,13 +159,11 @@ const login = async (req, res) => {
  * @returns {Object} - Respuesta con token o error
  */
 const register = async (req, res) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
-  
   try {
-    // Validaciones de entrada
-    const { usuario, password, role, isTemporary, secciones } = req.body;
+    // Destructurar supervisorId de los datos de registro
+    const { usuario, password, role, isTemporary, secciones, supervisorId } = req.body;
     
+    // Validaciones de entrada previas
     if (!usuario || !password || !role || !secciones) {
       return res.status(400).json({ 
         success: false,
@@ -174,10 +172,8 @@ const register = async (req, res) => {
     }
     
     // Verificar creador
-    const creator = await User.findById(req.user.id).session(session);
+    const creator = await User.findById(req.user.id);
     if (!creator) {
-      await session.abortTransaction();
-      session.endSession();
       return res.status(401).json({ 
         success: false,
         message: 'Usuario creador no encontrado o sesión expirada' 
@@ -186,19 +182,16 @@ const register = async (req, res) => {
 
     // Verificar permisos para crear este tipo de usuario
     if (!isAllowedToCreate(creator.role, role)) {
-      await session.abortTransaction();
-      session.endSession();
       return res.status(403).json({ 
         success: false,
         message: `No tiene permisos para crear usuarios de tipo ${role}` 
       });
     }
 
-    // Verificar si el nombre de usuario ya existe
-    const existingUser = await User.findOne({ usuario }).session(session);
+    // Verificar si el nombre de usuario ya existe (convertir a minúsculas)
+    const usuarioLowerCase = usuario.toLowerCase();
+    const existingUser = await User.findOne({ usuario: usuarioLowerCase });
     if (existingUser) {
-      await session.abortTransaction();
-      session.endSession();
       return res.status(400).json({ 
         success: false,
         message: 'El nombre de usuario ya existe' 
@@ -207,25 +200,49 @@ const register = async (req, res) => {
 
     // Preparar datos del usuario
     let userData = { 
-      ...req.body, 
+      ...req.body,
+      usuario: usuarioLowerCase, // Guardar en minúsculas
       createdBy: creator._id,
       isActive: true
     };
     
-    // Gestionar operario temporal
-    if (role === ROLES.OPERARIO && isTemporary) {
-      const expirationDate = new Date();
-      expirationDate.setMinutes(expirationDate.getMinutes() + 30); // 30 minutos por defecto
-      userData.expiresAt = expirationDate;
+    // Manejar operarios
+    if (role === ROLES.OPERARIO) {
+      // Si es temporal, establecer fecha de expiración
+      if (isTemporary) {
+        const expirationDate = new Date();
+        expirationDate.setMinutes(expirationDate.getMinutes() + 30); // 30 minutos por defecto
+        userData.expiresAt = expirationDate;
+      }
+      
+      // Validar y añadir supervisorId para operarios
+      if (supervisorId) {
+        // Verificar que el supervisor exista y sea un supervisor válido
+        const supervisor = await User.findOne({
+          _id: supervisorId,
+          role: ROLES.SUPERVISOR
+        });
+        
+        if (!supervisor) {
+          return res.status(400).json({ 
+            success: false,
+            message: 'Supervisor inválido' 
+          });
+        }
+        
+        userData.supervisorId = supervisorId;
+      } else {
+        // Si es un operario, el supervisor es obligatorio
+        return res.status(400).json({ 
+          success: false,
+          message: 'Se requiere un supervisor para crear un operario' 
+        });
+      }
     }
 
     // Crear el usuario
     const user = new User(userData);
-    await user.save({ session });
-    
-    // Commit de la transacción
-    await session.commitTransaction();
-    session.endSession();
+    await user.save();
     
     // Generar token JWT
     const token = generateToken(user);
@@ -239,13 +256,11 @@ const register = async (req, res) => {
         id: user._id,
         usuario: user.usuario,
         role: user.role,
-        secciones: user.secciones
+        secciones: user.secciones,
+        supervisorId: user.supervisorId // Incluir supervisorId en la respuesta
       }
     });
   } catch (error) {
-    await session.abortTransaction();
-    session.endSession();
-    
     console.error('Error en register:', error);
     
     if (error.code === 11000) {
@@ -421,9 +436,6 @@ const getUserById = async (req, res) => {
  * @returns {Object} - Usuario actualizado o error
  */
 const updateUser = async (req, res) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
-  
   try {
     // Validación de ID
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
@@ -433,11 +445,9 @@ const updateUser = async (req, res) => {
       });
     }
     
-    // Obtener usuario a actualizar - IMPORTANTE: Usar .session(session) en todas las consultas
-    const user = await User.findById(req.params.id).session(session);
+    // Obtener usuario a actualizar
+    const user = await User.findById(req.params.id);
     if (!user) {
-      await session.abortTransaction();
-      session.endSession();
       return res.status(404).json({ 
         success: false, 
         message: 'Usuario no encontrado' 
@@ -445,12 +455,10 @@ const updateUser = async (req, res) => {
     }
 
     // Validar permisos para cambios críticos
-    const requestUser = await User.findById(req.user.id).session(session);
+    const requestUser = await User.findById(req.user.id);
     
     // Cambio de rol: solo admin puede hacerlo
     if (req.body.role && requestUser.role !== ROLES.ADMIN) {
-      await session.abortTransaction();
-      session.endSession();
       return res.status(403).json({ 
         success: false, 
         message: 'No tiene permisos para cambiar roles de usuario' 
@@ -461,8 +469,6 @@ const updateUser = async (req, res) => {
     if (user.role === ROLES.ADMIN && !user.createdBy) {
       // Si intentan cambiar campos críticos del admin principal
       if (req.body.role || req.body.isActive === false) {
-        await session.abortTransaction();
-        session.endSession();
         return res.status(403).json({ 
           success: false, 
           message: 'No se pueden modificar atributos críticos del administrador principal' 
@@ -473,6 +479,11 @@ const updateUser = async (req, res) => {
     // Preparar datos de actualización
     const updateData = { ...req.body };
     
+    // Si hay usuario, convertirlo a minúsculas
+    if (updateData.usuario) {
+      updateData.usuario = updateData.usuario.toLowerCase();
+    }
+
     // Manejar contraseña si se proporciona
     if (updateData.password) {
       const salt = await bcrypt.genSalt(10);
@@ -497,16 +508,14 @@ const updateUser = async (req, res) => {
       }
     }
 
-    // Actualizar el usuario - IMPORTANTE: Usar .session(session) aquí también
+    // Actualizar el usuario
     const updatedUser = await User.findByIdAndUpdate(
       req.params.id,
       { $set: updateData },
-      { new: true, runValidators: true, session }
+      { new: true, runValidators: true }
     ).select('-password');
 
     if (!updatedUser) {
-      await session.abortTransaction();
-      session.endSession();
       return res.status(404).json({ 
         success: false, 
         message: 'Usuario no encontrado durante la actualización' 
@@ -515,10 +524,6 @@ const updateUser = async (req, res) => {
     
     // Registrar la actualización
     console.log(`Usuario ${updatedUser._id} actualizado por ${req.user.id}`);
-    
-    // Commit de la transacción
-    await session.commitTransaction();
-    session.endSession();
 
     res.json({
       success: true,
@@ -526,9 +531,6 @@ const updateUser = async (req, res) => {
       user: updatedUser
     });
   } catch (error) {
-    await session.abortTransaction();
-    session.endSession();
-    
     console.error('Error en updateUser:', error);
     
     if (error.name === 'ValidationError') {
@@ -554,9 +556,6 @@ const updateUser = async (req, res) => {
  * @returns {Object} - Respuesta con resultado o error
  */
 const deleteUser = async (req, res) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
-  
   try {
     // Validación de ID
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
@@ -566,10 +565,8 @@ const deleteUser = async (req, res) => {
       });
     }
     
-    const user = await User.findById(req.params.id).session(session);
+    const user = await User.findById(req.params.id);
     if (!user) {
-      await session.abortTransaction();
-      session.endSession();
       return res.status(404).json({ 
         success: false, 
         message: 'Usuario no encontrado' 
@@ -578,8 +575,6 @@ const deleteUser = async (req, res) => {
 
     // No permitir eliminar al admin principal
     if (user.role === ROLES.ADMIN && !user.createdBy) {
-      await session.abortTransaction();
-      session.endSession();
       return res.status(403).json({ 
         success: false, 
         message: 'No se puede eliminar al administrador principal' 
@@ -591,7 +586,7 @@ const deleteUser = async (req, res) => {
     const clientesQuery = { userId: user._id };
     
     // Contar primero para evitar operación innecesaria
-    const clientCount = await Cliente.countDocuments(clientesQuery).session(session);
+    const clientCount = await Cliente.countDocuments(clientesQuery);
     let clientesActualizados = 0;
     
     if (clientCount > 0) {
@@ -599,8 +594,7 @@ const deleteUser = async (req, res) => {
       
       const updateResult = await Cliente.updateMany(
         clientesQuery,
-        { $unset: { userId: "" } },
-        { session }
+        { $unset: { userId: "" } }
       );
       
       clientesActualizados = updateResult.modifiedCount;
@@ -608,20 +602,14 @@ const deleteUser = async (req, res) => {
     }
 
     // Eliminar el usuario
-    const deleteResult = await User.deleteOne({ _id: user._id }).session(session);
+    const deleteResult = await User.deleteOne({ _id: user._id });
     
     if (deleteResult.deletedCount !== 1) {
-      await session.abortTransaction();
-      session.endSession();
       return res.status(500).json({ 
         success: false, 
         message: 'Error al eliminar usuario' 
       });
     }
-    
-    // Commit de la transacción
-    await session.commitTransaction();
-    session.endSession();
     
     res.json({ 
       success: true,
@@ -629,9 +617,6 @@ const deleteUser = async (req, res) => {
       clientesEnStandBy: clientesActualizados 
     });
   } catch (error) {
-    await session.abortTransaction();
-    session.endSession();
-    
     console.error('Error al eliminar usuario:', error);
     res.status(500).json({ 
       success: false,
@@ -651,6 +636,7 @@ const getCurrentUser = async (req, res) => {
   try {
     const user = await User.findById(req.user.id)
       .select('-password')
+      .populate('supervisorId', 'usuario nombre apellido role')
       .populate('createdBy', 'usuario nombre apellido')
       .lean();
     
@@ -881,6 +867,60 @@ const getSupervisors = async (req, res) => {
   }
 };
 
+/**
+ * Obtiene información del supervisor asignado al operario actual
+ * @param {Object} req - Objeto de solicitud Express
+ * @param {Object} res - Objeto de respuesta Express
+ * @returns {Object} - Información del supervisor o error
+ */
+const getSupervisorInfo = async (req, res) => {
+  try {
+    // Obtener el usuario actual con su información de supervisor
+    const user = await User.findById(req.user.id)
+      .select('supervisorId role')
+      .lean();
+    
+    if (!user) {
+      return res.status(404).json({ 
+        success: false,
+        message: 'Usuario no encontrado'
+      });
+    }
+    
+    // Si no es un operario o no tiene supervisor asignado
+    if (user.role !== ROLES.OPERARIO || !user.supervisorId) {
+      return res.status(404).json({ 
+        success: false,
+        message: 'No hay supervisor asignado'
+      });
+    }
+    
+    // Obtener información del supervisor
+    const supervisor = await User.findById(user.supervisorId)
+      .select('_id usuario nombre apellido email role')
+      .lean();
+    
+    if (!supervisor) {
+      return res.status(404).json({ 
+        success: false,
+        message: 'Supervisor no encontrado'
+      });
+    }
+    
+    res.json({
+      success: true,
+      supervisor
+    });
+  } catch (error) {
+    console.error('Error en getSupervisorInfo:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error al obtener información del supervisor',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
 module.exports = {
   login,
   register,
@@ -892,5 +932,6 @@ module.exports = {
   getCurrentUser,
   toggleUserStatus,
   reactivateTemporaryOperator,
-  getSupervisors
+  getSupervisors,
+  getSupervisorInfo
 };

@@ -1,6 +1,7 @@
 // src/controllers/clienteController.js
 const Cliente = require('../models/clienteSchema');
 const clienteLogic = require('../logic/clienteLogic');
+const User = require('../models/user');
 const mongoose = require('mongoose');
 
 // Obtener todos los clientes
@@ -141,6 +142,56 @@ exports.getClientesByUserId = async (req, res) => {
             mensaje: 'Error al obtener clientes', 
             error: error.message,
             stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        });
+    }
+};
+
+// NUEVO ENDPOINT: Obtener clientes del supervisor asignado al operario
+exports.getClientesByOperarioSupervisor = async (req, res) => {
+    try {
+        // 1. Primero obtenemos el ID del usuario actual (operario)
+        const operarioId = req.user.id;
+        
+        // 2. Buscar el operario para obtener su supervisorId
+        const operario = await User.findById(operarioId);
+        
+        if (!operario) {
+            return res.status(404).json({
+                success: false,
+                message: 'Usuario operario no encontrado'
+            });
+        }
+        
+        // 3. Verificar que sea un operario y tenga un supervisor asignado
+        if (operario.role !== 'operario' || !operario.supervisorId) {
+            return res.status(404).json({
+                success: false,
+                message: 'No tienes un supervisor asignado o no eres un operario'
+            });
+        }
+        
+        // 4. Obtener el supervisorId del operario
+        const supervisorId = operario.supervisorId;
+        
+        // 5. Obtener los clientes asociados al supervisor
+        const clientes = await Cliente.find({ 'subServicios.supervisorId': supervisorId })
+            .populate('userId', 'nombre email usuario apellido role isActive')
+            .populate('subServicios.supervisorId', 'nombre email usuario apellido role isActive');
+        
+        if (!clientes || clientes.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Tu supervisor no tiene clientes asignados'
+            });
+        }
+        
+        res.json(clientes);
+    } catch (error) {
+        console.error('Error al obtener clientes del supervisor del operario:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error al obtener clientes',
+            error: error.message
         });
     }
 };

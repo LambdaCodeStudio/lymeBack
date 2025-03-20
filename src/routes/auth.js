@@ -11,7 +11,8 @@ const {
   getCurrentUser,
   toggleUserStatus,
   reactivateTemporaryOperator,
-  getSupervisors
+  getSupervisors,
+  getSupervisorInfo
 } = require('../controllers/auth');
 const { auth } = require('../middleware/auth');
 const { isAdmin, isOnlyAdmin, hasRole } = require('../middleware/roleMiddleware');
@@ -197,5 +198,12 @@ router.delete(
  * @access  Privado (cualquier usuario autenticado)
  */
 router.get('/supervisors', getSupervisors);
+
+/**
+ * @route   GET /api/auth/me/supervisor
+ * @desc    Obtener información del supervisor asignado al usuario actual (para operarios)
+ * @access  Privado (para cualquier usuario autenticado, principalmente operarios)
+ */
+router.get('/me/supervisor', getSupervisorInfo);
 
 module.exports = router;

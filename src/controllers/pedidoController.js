@@ -539,3 +539,73 @@ exports.getPedidosEstadisticas = async (req, res) => {
         });
     }
 };
+
+exports.rechazarPedido = async (req, res) => {
+    try {
+        // Validar que el ID sea un ObjectId válido
+        if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+            return res.status(400).json({ mensaje: 'ID de pedido inválido' });
+        }
+
+        const pedidoId = req.params.id;
+        const { motivo } = req.body;
+
+        // Obtener el pedido para restaurar stock
+        const pedido = await Pedido.findById(pedidoId);
+        if (!pedido) {
+            return res.status(404).json({ mensaje: 'Pedido no encontrado' });
+        }
+
+        // Solo rechazar si está pendiente
+        if (pedido.estado !== 'pendiente') {
+            return res.status(400).json({ 
+                mensaje: 'Solo se pueden rechazar pedidos pendientes' 
+            });
+        }
+
+        // IMPORTANTE: Restaurar el stock de cada producto
+        for (const item of pedido.productos) {
+            const productoId = typeof item.productoId === 'object' ? 
+                item.productoId._id : item.productoId;
+            const cantidad = item.cantidad;
+            
+            // Obtener producto actual
+            const producto = await productoLogic.obtenerPorId(productoId);
+            if (producto) {
+                // Aumentar stock y reducir vendidos
+                await productoLogic.actualizarProducto(productoId, {
+                    stock: producto.stock + cantidad,
+                    vendidos: Math.max(0, (producto.vendidos || 0) - cantidad)
+                });
+                console.log(`Stock restaurado para producto ${productoId}: +${cantidad} unidades`);
+            }
+        }
+
+        // Actualizar estado del pedido
+        pedido.estado = 'rechazado';
+        pedido.observaciones = motivo;
+        pedido.fechaRechazo = new Date();
+        pedido.rechazadoPor = req.user.id;
+
+        await pedido.save();
+        
+        // Devolver el pedido rechazado con información completa
+        const pedidoRechazado = await Pedido.findById(pedidoId)
+            .populate('userId', 'nombre email usuario apellido role')
+            .populate('supervisorId', 'nombre email usuario apellido role')
+            .populate('productos.productoId')
+            .populate('rechazadoPor', 'nombre email usuario apellido');
+
+        res.json({
+            success: true,
+            mensaje: 'Pedido rechazado correctamente',
+            pedido: pedidoRechazado
+        });
+    } catch (error) {
+        console.error('Error al rechazar pedido:', error);
+        res.status(500).json({ 
+            mensaje: 'Error al rechazar pedido', 
+            error: error.message 
+        });
+    }
+};
