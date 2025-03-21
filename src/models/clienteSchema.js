@@ -47,24 +47,13 @@ const clienteSchema = new mongoose.Schema({
     type: String,
     default: ''
   },
-  // Mantener compatibilidad con el esquema anterior
-  servicio: { 
-    type: String,
-    default: function() {
-      return this.nombre;
-    }
-  },
-  seccionDelServicio: {
-    type: String,
-    default: ''
-  },
+  // Lista de subservicios/ubicaciones
+  subServicios: [subServicioSchema],
   // Referencia al usuario asignado (se mantiene para compatibilidad)
   userId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   },
-  // Lista de subservicios/ubicaciones
-  subServicios: [subServicioSchema],
   // Campos adicionales que podrían ser útiles
   direccion: {
     type: String,
