@@ -2,6 +2,21 @@
 const productoLogic = require('../logic/productoLogic');
 const Producto = require('../models/productoSchema');
 const mongoose = require('mongoose');
+const path = require('path');
+const fs = require('fs');
+const sharp = require('sharp');
+
+// Definir rutas base como constantes
+// Ajusta la ruta para encontrar correctamente la carpeta public
+const BASE_DIR = path.resolve(__dirname, '..'); // Subir un nivel desde /controllers a la raíz del proyecto
+const IMAGES_DIR = path.join(BASE_DIR, 'public', 'images', 'products');
+const IMAGES_URL_PREFIX = '/images/products'; // URL relativa para el frontend
+
+// Asegurar que el directorio existe al iniciar el controlador
+if (!fs.existsSync(IMAGES_DIR)) {
+  fs.mkdirSync(IMAGES_DIR, { recursive: true });
+  console.log(`Directorio de imágenes creado: ${IMAGES_DIR}`);
+}
 
 // Función mejorada para obtener productos con múltiples filtros
 async function obtenerTodos(req, res) {
@@ -340,77 +355,6 @@ async function uploadImagen(req, res) {
       // Verificar si el producto existe y pertenece a la sección del usuario
       const productoActual = await productoLogic.obtenerPorId(id);
       if (!productoActual) {
-          return res.status(404).json({ error: 'Producto no encontrado' });
-      }
-      
-      // Verificar permisos de sección
-      const userSeccion = req.user ? req.user.secciones : null;
-      if (userSeccion && userSeccion !== 'ambos' && productoActual.categoria !== userSeccion) {
-          return res.status(403).json({ 
-              error: 'No tiene permisos para modificar productos de esta categoría' 
-          });
-      }
-      
-      const resultado = await productoLogic.updateImagen(id, req.file.buffer);
-      
-      return res.status(200).json(resultado);
-    } catch (error) {
-      console.error('Error al subir imagen del producto:', error);
-      return res.status(500).json({ 
-        success: false, 
-        message: error.message 
-      });
-    }
-}
-
-// Función para subir imagen en formato base64
-async function uploadImagenBase64(req, res) {
-    try {
-      const { id } = req.params;
-      const { base64Image } = req.body;
-      
-      if (!base64Image) {
-        return res.status(400).json({ 
-          success: false, 
-          message: 'No se ha proporcionado ninguna imagen en formato base64' 
-        });
-      }
-      
-      // Verificar si el producto existe y pertenece a la sección del usuario
-      const productoActual = await productoLogic.obtenerPorId(id);
-      if (!productoActual) {
-          return res.status(404).json({ error: 'Producto no encontrado' });
-      }
-      
-      // Verificar permisos de sección
-      const userSeccion = req.user ? req.user.secciones : null;
-      if (userSeccion && userSeccion !== 'ambos' && productoActual.categoria !== userSeccion) {
-          return res.status(403).json({ 
-              error: 'No tiene permisos para modificar productos de esta categoría' 
-          });
-      }
-      
-      const resultado = await productoLogic.updateImagenBase64(id, base64Image);
-      
-      return res.status(200).json(resultado);
-    } catch (error) {
-      console.error('Error al subir imagen base64 del producto:', error);
-      return res.status(500).json({ 
-        success: false, 
-        message: error.message 
-      });
-    }
-}
-
-// Función para obtener imagen
-async function getImagen(req, res) {
-    try {
-      const { id } = req.params;
-      const { quality = 80, width, height } = req.query; // Parámetros opcionales
-      
-      // Verificar si el producto existe y pertenece a la sección del usuario
-      const productoActual = await productoLogic.obtenerPorIdLigero(id);
-      if (!productoActual) {
         return res.status(404).json({ error: 'Producto no encontrado' });
       }
       
@@ -418,136 +362,108 @@ async function getImagen(req, res) {
       const userSeccion = req.user ? req.user.secciones : null;
       if (userSeccion && userSeccion !== 'ambos' && productoActual.categoria !== userSeccion) {
         return res.status(403).json({ 
-          error: 'No tiene permisos para ver productos de esta categoría' 
+          error: 'No tiene permisos para modificar productos de esta categoría' 
         });
       }
       
-      // Optimización: Usar ETags para caché
-      const etagFromClient = req.headers['if-none-match'];
+      // Configurar rutas y nombres usando constantes
+      const nombreArchivo = `${id}.webp`;
+      const rutaArchivo = path.join(IMAGES_DIR, nombreArchivo);
+      const imageUrl = `${IMAGES_URL_PREFIX}/${nombreArchivo}`;
       
-      // Generar ETag basado en fecha de actualización y parámetros de imagen
-      const etag = `W/"img-${id}-${productoActual.updatedAt}-${quality}-${width || 'auto'}-${height || 'auto'}"`;
+      console.log(`Guardando imagen en: ${rutaArchivo}`);
+      console.log(`URL relativa: ${imageUrl}`);
       
-      // Si el cliente envió un ETag que coincide, responder con 304 Not Modified
-      if (etagFromClient === etag) {
-        return res.status(304).end();
-      }
-      
+      // Procesar y guardar la imagen con Sharp
       try {
-        // Intentar obtener la imagen como buffer
-        let imagenBuffer = await productoLogic.getImagen(id);
+        await sharp(req.file.buffer)
+          .webp({ quality: 80 }) 
+          .toFile(rutaArchivo);
         
-        // Si tenemos Sharp, procesar la imagen
-        if (imagenBuffer) {
-          try {
-            // Validar que la calidad esté entre 1 y 100
-            const webpQuality = Math.max(1, Math.min(100, parseInt(quality) || 80));
-            
-            // Usar sharp para convertir la imagen a formato WebP
-            const sharp = require('sharp');
-            let sharpInstance = sharp(imagenBuffer);
-            
-            // Redimensionar si se especifican width o height
-            if (width || height) {
-              sharpInstance = sharpInstance.resize({
-                width: width ? parseInt(width) : null,
-                height: height ? parseInt(height) : null,
-                fit: 'inside', // Mantiene la relación de aspecto
-                withoutEnlargement: true // No aumenta el tamaño si la imagen es más pequeña
-              });
+        // Verificar que la imagen se guardó correctamente
+        if (!fs.existsSync(rutaArchivo)) {
+          throw new Error('La imagen no se guardó correctamente');
+        }
+        
+        // Actualizar el documento en MongoDB (solo guardar la URL, no la imagen)
+        const resultado = await Producto.findByIdAndUpdate(
+          id,
+          { 
+            $set: { 
+              imagen: null, // No guardar imagen binaria
+              imageUrl: imageUrl,
+              imagenInfo: {
+                mimetype: 'image/webp',
+                rutaArchivo: rutaArchivo,
+                tamano: fs.statSync(rutaArchivo).size,
+                ultimaActualizacion: new Date()
+              }
             }
-            
-            // Convertir a WebP con la calidad especificada
-            const webpImage = await sharpInstance
-              .webp({ quality: webpQuality })
-              .toBuffer();
-            
-            // Configurar los headers para la imagen WebP
-            res.set('Content-Type', 'image/webp');
-            // Agregar cache-control para mejor rendimiento
-            res.set('ETag', etag);
-            res.set('Cache-Control', 'public, max-age=86400'); // 1 día
-            return res.send(webpImage);
-          } catch (sharpError) {
-            console.error('Error al procesar imagen con Sharp:', sharpError);
-            // Si falla Sharp, enviamos la imagen original sin procesar
-            res.set('Content-Type', 'image/jpeg');
-            res.set('ETag', etag);
-            res.set('Cache-Control', 'public, max-age=86400');
-            return res.send(imagenBuffer);
-          }
-        } else {
-          throw new Error('No se pudo obtener la imagen');
-        }
-      } catch (error) {
-        // Si el error es específicamente que el producto no tiene imagen, 
-        // devolvemos un estado 204 (No Content) en lugar de un error
-        if (error.message === 'El producto no tiene una imagen') {
-          return res.status(204).end();
-        }
+          },
+          { new: true }
+        );
         
-        // Para otros errores, seguimos lanzando la excepción
-        throw error;
+        return res.status(200).json({
+          success: true,
+          message: 'Imagen actualizada correctamente',
+          imageUrl: imageUrl
+        });
+      } catch (error) {
+        console.error('Error al procesar imagen:', error);
+        return res.status(500).json({ 
+          success: false, 
+          message: `Error al procesar imagen: ${error.message}` 
+        });
       }
     } catch (error) {
-      console.error('Error al obtener imagen del producto:', error);
-      return res.status(error.message === 'Producto no encontrado' ? 404 : 500).json({ 
+      console.error('Error al subir imagen del producto:', error);
+      return res.status(500).json({ 
         success: false, 
         message: error.message 
       });
     }
   }
 
-// Función para obtener imagen en formato base64
-async function getImagenBase64(req, res) {
+/**
+ * Función getImagen actualizada para trabajar con imágenes externas
+ * Redirecciona a la URL de la imagen en lugar de servirla desde MongoDB
+ */
+async function getImagen(req, res) {
     try {
       const { id } = req.params;
       
-      // Verificar si el producto existe y pertenece a la sección del usuario
-      const productoActual = await productoLogic.obtenerPorId(id);
-      if (!productoActual) {
-          return res.status(404).json({ error: 'Producto no encontrado' });
+      // Verificar si el producto existe
+      const producto = await productoLogic.obtenerPorId(id);
+      if (!producto) {
+        return res.status(404).json({ error: 'Producto no encontrado' });
       }
       
-      // Verificar permisos de sección
+      // Verificar permisos de sección si es necesario
       const userSeccion = req.user ? req.user.secciones : null;
-      if (userSeccion && userSeccion !== 'ambos' && productoActual.categoria !== userSeccion) {
-          return res.status(403).json({ 
-              error: 'No tiene permisos para ver productos de esta categoría' 
-          });
+      if (userSeccion && userSeccion !== 'ambos' && producto.categoria !== userSeccion) {
+        return res.status(403).json({ 
+          error: 'No tiene permisos para ver productos de esta categoría' 
+        });
       }
       
-      try {
-        // Intentar obtener la imagen en formato base64
-        const base64Image = await productoLogic.getImagenBase64(id);
-        
-        // Devolver la imagen en formato JSON con el base64
-        return res.status(200).json({ 
-          success: true, 
-          image: base64Image 
+      // Verificar si el producto tiene URL de imagen
+      if (!producto.imageUrl) {
+        // Si no hay imagen, devolver 204 No Content
+        return res.status(204).json({ 
+          message: 'El producto no tiene imagen' 
         });
-        
-      } catch (error) {
-        // Si el error es específicamente que el producto no tiene imagen, 
-        // devolvemos un estado 204 (No Content) en lugar de un error
-        if (error.message === 'El producto no tiene una imagen') {
-          return res.status(204).json({ 
-            success: false, 
-            message: 'El producto no tiene una imagen' 
-          });
-        }
-        
-        // Para otros errores, seguimos lanzando la excepción
-        throw error;
       }
+      
+      // Redirigir a la URL de la imagen
+      return res.redirect(producto.imageUrl);
     } catch (error) {
-      console.error('Error al obtener imagen base64 del producto:', error);
-      return res.status(error.message === 'Producto no encontrado' ? 404 : 500).json({ 
+      console.error('Error al procesar solicitud de imagen:', error);
+      return res.status(500).json({ 
         success: false, 
         message: error.message 
       });
     }
-}
+  }
 
 // Función para eliminar imagen
 async function deleteImagen(req, res) {
@@ -557,20 +473,48 @@ async function deleteImagen(req, res) {
       // Verificar si el producto existe y pertenece a la sección del usuario
       const productoActual = await productoLogic.obtenerPorId(id);
       if (!productoActual) {
-          return res.status(404).json({ error: 'Producto no encontrado' });
+        return res.status(404).json({ error: 'Producto no encontrado' });
       }
       
       // Verificar permisos de sección
       const userSeccion = req.user ? req.user.secciones : null;
       if (userSeccion && userSeccion !== 'ambos' && productoActual.categoria !== userSeccion) {
-          return res.status(403).json({ 
-              error: 'No tiene permisos para modificar productos de esta categoría' 
-          });
+        return res.status(403).json({ 
+          error: 'No tiene permisos para modificar productos de esta categoría' 
+        });
       }
       
-      const resultado = await productoLogic.deleteImagen(id);
+      // Comprobar si tiene imageUrl
+      if (productoActual.imageUrl) {
+        // Intentar eliminar el archivo físico
+        const imagePath = path.join(IMAGES_DIR, path.basename(productoActual.imageUrl));
+        
+        console.log(`Intentando eliminar imagen en: ${imagePath}`);
+        
+        if (fs.existsSync(imagePath)) {
+          fs.unlinkSync(imagePath);
+          console.log(`Imagen eliminada: ${imagePath}`);
+        } else {
+          console.log(`Advertencia: Imagen no encontrada en: ${imagePath}`);
+        }
+      }
       
-      return res.status(200).json(resultado);
+      // Actualizar el documento para eliminar referencias a la imagen
+      await Producto.findByIdAndUpdate(
+        id,
+        { 
+          $set: { 
+            imagen: null,
+            imageUrl: null,
+            imagenInfo: null
+          }
+        }
+      );
+      
+      return res.status(200).json({ 
+        success: true, 
+        message: 'Imagen eliminada correctamente' 
+      });
     } catch (error) {
       console.error('Error al eliminar imagen del producto:', error);
       return res.status(500).json({ 
@@ -578,7 +522,7 @@ async function deleteImagen(req, res) {
         message: error.message 
       });
     }
-}
+  }
 
 // Función para calcular precio de combo
 async function calcularPrecioCombo(req, res) {
@@ -845,8 +789,6 @@ module.exports = {
     uploadImagen,
     getImagen, 
     deleteImagen,
-    uploadImagenBase64,
-    getImagenBase64,
     calcularPrecioCombo,
     getStockStats,
     obtenerProductosPorMarca,

@@ -4,16 +4,25 @@ const multer = require('multer');
 // Configuración de almacenamiento en memoria para procesamiento
 const storage = multer.memoryStorage();
 
-// Filtro para aceptar solo imágenes
+// Filtro más robusto para aceptar solo imágenes
 const fileFilter = (req, file, cb) => {
-  if (file.mimetype.startsWith('image/')) {
+  // Lista de tipos MIME de imágenes permitidos
+  const allowedMimes = [
+    'image/jpeg', 
+    'image/png', 
+    'image/gif', 
+    'image/webp',
+    'image/svg+xml'
+  ];
+
+  if (allowedMimes.includes(file.mimetype)) {
     cb(null, true);
   } else {
-    cb(new Error('El archivo debe ser una imagen'), false);
+    cb(new Error(`Tipo de archivo no permitido. Se permiten: ${allowedMimes.join(', ')}`), false);
   }
 };
 
-// Configuración de Multer
+// Configuración de Multer con mejor manejo de errores
 const upload = multer({
   storage: storage,
   fileFilter: fileFilter,

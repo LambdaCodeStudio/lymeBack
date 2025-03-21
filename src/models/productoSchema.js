@@ -155,7 +155,7 @@ const productoSchema = new mongoose.Schema({
     default: {}
   },
   
-  // Manejo de imagen
+  // Manejo de imagen - Método antiguo (binario en DB)
   imagen: { 
     type: Buffer, 
     required: false,
@@ -165,6 +165,14 @@ const productoSchema = new mongoose.Schema({
     mimetype: String,
     tamano: Number,
     ultimaActualizacion: Date
+  },
+  
+  // Manejo de imagen - Método nuevo (URL a archivo)
+  imageUrl: {
+    type: String,
+    trim: true,
+    sparse: true,
+    description: 'URL relativa a la imagen del producto (ejemplo: /images/products/ID.webp)'
   },
   
   // Estadísticas de ventas
@@ -296,6 +304,7 @@ productoSchema.index({ 'itemsCombo.productoId': 1 }); // Para búsquedas en comb
 productoSchema.index({ updatedAt: -1 }); // Para ordenar por última actualización
 productoSchema.index({ codigoBarras: 1 }); // Para búsquedas por código de barras
 productoSchema.index({ codigoInterno: 1 }); // Para búsquedas por código interno
+productoSchema.index({ imageUrl: 1 }, { sparse: true }); // Para búsquedas por imagen
 
 // Índice de texto para búsquedas
 productoSchema.index(
@@ -322,6 +331,19 @@ productoSchema.virtual('diasSinVender').get(function() {
   const hoy = new Date();
   const diff = hoy - this.ultimaVenta;
   return Math.floor(diff / (1000 * 60 * 60 * 24));
+});
+
+// Helper que obtiene la URL completa de la imagen
+productoSchema.virtual('imagenFullUrl').get(function() {
+  if (!this.imageUrl) return null;
+  
+  // Si la URL ya es absoluta, devolverla tal cual
+  if (this.imageUrl.startsWith('http')) {
+    return this.imageUrl;
+  }
+  
+  // Si no, construir una URL relativa basada en el ID
+  return `/images/products/${this._id.toString()}.webp`;
 });
 
 module.exports = mongoose.model('Producto', productoSchema);

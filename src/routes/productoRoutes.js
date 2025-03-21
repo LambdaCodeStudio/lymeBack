@@ -48,12 +48,6 @@ router.get('/:id/imagen', productoController.getImagen);
 // Eliminar imagen
 router.delete('/:id/imagen', productoController.deleteImagen);
 
-// Subir imagen (formato base64)
-router.post('/:id/imagen-base64', productoController.uploadImagenBase64);
-
-// Obtener imagen (formato base64)
-router.get('/:id/imagen-base64', productoController.getImagenBase64);
-
 // ===== Rutas para combos =====
 
 // Calcular precio de combo

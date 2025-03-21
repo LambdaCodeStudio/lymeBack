@@ -7,6 +7,7 @@ const cookieParser = require('cookie-parser');
 const compression = require('compression');
 const NodeCache = require('node-cache');
 
+
 // Importar configuraciones y servicios optimizados
 const corsOptions = require('./config/cors');
 const { connectDB, ensureDbConnection } = require('./config/db');
@@ -21,6 +22,10 @@ const {
 
 // Crear app Express
 const app = express();
+const path = require('path');
+
+// Configurar Express para servir archivos estáticos
+app.use(express.static(path.join(__dirname, 'public')));
 
 // Establecer caché global
 global.cache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
