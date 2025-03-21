@@ -171,11 +171,22 @@ const eliminarSubUbicacion = async (clienteId, subServicioId, subUbicacionId) =>
 
 // NUEVA FUNCIÓN: Asignar supervisor a un subservicio
 const asignarSupervisorSubServicio = async (clienteId, subServicioId, supervisorId) => {
+    // Obtener cliente
     const cliente = await Cliente.findById(clienteId);
     if (!cliente) return null;
     
+    // Obtener subservicio
     const subServicio = cliente.subServicios.id(subServicioId);
     if (!subServicio) return null;
+    
+    // Verificar si el supervisor está en la lista de supervisores del cliente
+    const supervisorIds = cliente.userId.map(id => 
+        typeof id === 'object' && id !== null ? id._id.toString() : id.toString()
+    );
+    
+    if (!supervisorIds.includes(supervisorId)) {
+        throw new Error('El supervisor seleccionado no está asignado a este cliente');
+    }
     
     // Asignar el supervisor al subservicio
     subServicio.supervisorId = supervisorId;

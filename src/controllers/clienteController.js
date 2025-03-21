@@ -265,13 +265,16 @@ exports.createCliente = async (req, res) => {
             return res.status(400).json({ mensaje: 'El nombre del cliente es requerido' });
         }
         
+        // Asegurarnos de que userId sea un array
+        const userIds = Array.isArray(req.body.userId) ? req.body.userId : req.body.userId ? [req.body.userId] : [];
+        
         // Crear objeto de cliente con los campos requeridos y opcionales
         const clienteData = {
             nombre: req.body.nombre,
             descripcion: req.body.descripcion || '',
             servicio: req.body.servicio || req.body.nombre, // Mantener compatibilidad
             seccionDelServicio: req.body.seccionDelServicio || '',
-            userId: req.body.userId,
+            userId: userIds,
             subServicios: req.body.subServicios || [],
             direccion: req.body.direccion || '',
             telefono: req.body.telefono || '',
@@ -309,7 +312,12 @@ exports.updateCliente = async (req, res) => {
         if (req.body.descripcion !== undefined) clienteData.descripcion = req.body.descripcion;
         if (req.body.servicio !== undefined) clienteData.servicio = req.body.servicio;
         if (req.body.seccionDelServicio !== undefined) clienteData.seccionDelServicio = req.body.seccionDelServicio;
-        if (req.body.userId !== undefined) clienteData.userId = req.body.userId;
+        
+        // Asegurarnos de que userId sea un array si viene en la petición
+        if (req.body.userId !== undefined) {
+            clienteData.userId = Array.isArray(req.body.userId) ? req.body.userId : [req.body.userId];
+        }
+        
         if (req.body.subServicios !== undefined) clienteData.subServicios = req.body.subServicios;
         if (req.body.direccion !== undefined) clienteData.direccion = req.body.direccion;
         if (req.body.telefono !== undefined) clienteData.telefono = req.body.telefono;
@@ -461,17 +469,36 @@ exports.assignSupervisorToSubServicio = async (req, res) => {
             return res.status(400).json({ mensaje: 'ID de supervisor inválido' });
         }
         
-        const cliente = await clienteLogic.asignarSupervisorSubServicio(
+        // Obtener el cliente para verificar que el supervisor esté en su lista de supervisores
+        const cliente = await clienteLogic.obtenerClientePorId(req.params.clienteId);
+        
+        if (!cliente) {
+            return res.status(404).json({ mensaje: 'Cliente no encontrado' });
+        }
+        
+        // Verificar que el supervisor esté en la lista de supervisores del cliente
+        const supervisorIds = cliente.userId.map(id => 
+            typeof id === 'object' && id !== null ? id._id.toString() : id.toString()
+        );
+        
+        if (!supervisorIds.includes(req.body.supervisorId)) {
+            return res.status(400).json({ 
+                mensaje: 'El supervisor seleccionado no está asignado a este cliente',
+                supervisoresPermitidos: supervisorIds
+            });
+        }
+        
+        const clienteActualizado = await clienteLogic.asignarSupervisorSubServicio(
             req.params.clienteId,
             req.params.subServicioId,
             req.body.supervisorId
         );
         
-        if (!cliente) {
+        if (!clienteActualizado) {
             return res.status(404).json({ mensaje: 'Cliente o subservicio no encontrado' });
         }
         
-        res.json(cliente);
+        res.json(clienteActualizado);
     } catch (error) {
         console.error('Error al asignar supervisor a subservicio:', error);
         res.status(500).json({ mensaje: 'Error al asignar supervisor', error: error.message });
