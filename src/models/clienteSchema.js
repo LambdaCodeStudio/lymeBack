@@ -50,10 +50,10 @@ const clienteSchema = new mongoose.Schema({
   // Lista de subservicios/ubicaciones
   subServicios: [subServicioSchema],
   // Referencia al usuario asignado (se mantiene para compatibilidad)
-  userId: {
+  userId: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
-  },
+  }],
   // Campos adicionales que podrían ser útiles
   direccion: {
     type: String,
