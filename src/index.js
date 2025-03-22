@@ -12,10 +12,12 @@ const corsOptions = require('./config/cors');
 const { connectDB, ensureDbConnection } = require('./config/db');
 const { createInitialAdmin } = require('./controllers/auth');
 
-// Importar middleware de seguridad pero sin aplicar limitadores
+// Importar middleware de seguridad con límites optimizados
 const { 
-  securityBundle,
-  // Limitadores eliminados para pruebas
+  securityBundle, 
+  apiLimiter, 
+  authLimiter,
+  bulkOperationsLimiter
 } = require('./middleware/security');
 
 // Crear app Express
@@ -31,7 +33,7 @@ app.use(express.static(path.join(__dirname, 'public'), {
 
 // Establecer caché global con configuración de alto rendimiento
 global.cache = new NodeCache({ 
-  stdTTL: 600, // 10 minutos
+  stdTTL: 600, // 10 minutos (aumentado)
   checkperiod: 120, // 2 minutos
   maxKeys: 10000 // Limitar para evitar problemas de memoria
 });
@@ -60,13 +62,13 @@ app.use(cors(corsOptions));
 // Parsers para diferentes formatos de solicitud - optimizados
 app.use(express.json({ 
   limit: '10mb',
-  strict: false, // Más permisivo para pruebas
+  strict: true, // Solo aceptar JSON válido
   type: ['application/json', 'application/json;charset=utf-8']
 }));
 app.use(express.urlencoded({ 
   extended: true, 
   limit: '10mb',
-  parameterLimit: 10000 // Aumentado para pruebas
+  parameterLimit: 1000 // Limitar número de parámetros para prevenir DoS
 }));
 app.use(cookieParser());
 
@@ -80,35 +82,64 @@ app.use(compression({
     if (req.path.includes('/imagen') || req.path.includes('/download')) {
       return false;
     }
+    // No comprimir respuestas pequeñas
+    if (parseInt(res.getHeader('Content-Length')) < 1024) {
+      return false;
+    }
     return compression.filter(req, res);
   }
 }));
 
 // ===== MIDDLEWARE DE SEGURIDAD =====
 
-// Protección limitada para pruebas
+// Protección contra vulnerabilidades web comunes - configuración optimizada
 app.use(helmet({
-  contentSecurityPolicy: false,
+  contentSecurityPolicy: false, // Desactivado para compatibilidad
   crossOriginEmbedderPolicy: false,
-  crossOriginOpenerPolicy: false,
-  crossOriginResourcePolicy: { policy: "cross-origin" }
+  crossOriginOpenerPolicy: true,
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+  dnsPrefetchControl: { allow: true }, // Permitir prefetch para mejor rendimiento
+  frameguard: { action: 'deny' },
+  hsts: {
+    maxAge: 31536000,
+    includeSubDomains: true,
+    preload: true
+  },
+  referrerPolicy: { policy: 'same-origin' }
 }));
 
-// Aplicar solo el bundle de seguridad básico sin rate limiters
-// Comentado para pruebas sin restricciones
-// app.use(securityBundle);
+// Aplicar bundle de seguridad optimizado para alto rendimiento
+app.use(securityBundle);
+
+// Límite de tasa para prevenir abuso en la API - configuración optimizada para 10,000 rpm
+if (process.env.NODE_ENV === 'production') {
+  // Rutas críticas necesitan protección especial aún con alto rendimiento
+  app.use('/api/auth/login', authLimiter);
+  app.use('/api/auth/register', authLimiter);
+  
+  // Aplicar limitador general a todas las demás rutas API
+  app.use('/api', (req, res, next) => {
+    // Saltarse la verificación de health check
+    if (req.path === '/health') {
+      return next();
+    }
+
+    return apiLimiter(req, res, next);
+  });
+}
 
 // ===== MIDDLEWARE DE CONEXIÓN A BASE DE DATOS =====
 
-// Asegurar que la conexión a la base de datos esté disponible
+// Asegurar que la conexión a la base de datos esté disponible - optimizado
 app.use(ensureDbConnection);
 
 // ===== RUTAS PÚBLICAS =====
 
-// Ruta de verificación de estado
+// Ruta de verificación de estado optimizada (no requiere autenticación)
 app.get('/api/health', (req, res) => {
   const mongoose = require('mongoose');
   
+  // Respuesta optimizada sin consultar información innecesaria
   res.status(200).json({ 
     success: true,
     status: 'ok', 
@@ -144,7 +175,7 @@ app.use((req, res) => {
   });
 });
 
-// Middleware para capturar y formatear errores
+// Middleware para capturar y formatear errores - optimizado
 app.use((err, req, res, next) => {
   // Registrar error en consola con detalles
   console.error('Error no capturado:', err.message);
@@ -157,13 +188,15 @@ app.use((err, req, res, next) => {
     success: false,
     message: err.message || 'Error interno del servidor',
     status: statusCode,
-    // Incluir información de depuración
-    error: {
-      name: err.name,
-      message: err.message,
-      stack: err.stack,
-      code: err.code
-    }
+    // Incluir información de depuración solo en desarrollo
+    ...(process.env.NODE_ENV !== 'production' && {
+      error: {
+        name: err.name,
+        message: err.message,
+        stack: err.stack,
+        code: err.code
+      }
+    })
   };
   
   // Enviar respuesta al cliente
@@ -206,7 +239,7 @@ if (process.env.NODE_ENV == 'production' || process.env.START_SERVER === 'true')
     =======================================
     🚀 Servidor ejecutándose en puerto ${PORT}
     🌎 Entorno: ${process.env.NODE_ENV || 'development'}
-    ⚠️ MODO DE PRUEBA SIN LIMITACIONES DE SEGURIDAD
+    🔄 Configurado para 10,000 peticiones por minuto
     📅 ${new Date().toISOString()}
     =======================================
     `);

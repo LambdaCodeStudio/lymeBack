@@ -48,7 +48,7 @@ const DB_CONFIG = {
   
   // Opciones de escritura para optimizar rendimiento
   w: 'majority',
-  wtimeoutMS: 2500
+  wtimeout: 2500
 };
 
 /**
@@ -152,7 +152,7 @@ const connectDB = async () => {
       autoIndex: DB_CONFIG.autoIndex,
       heartbeatFrequencyMS: DB_CONFIG.heartbeatFrequencyMS,
       w: DB_CONFIG.w,
-      wtimeoutMS: DB_CONFIG.wtimeoutMS
+      wtimeout: DB_CONFIG.wtimeout
     });
     
     console.log(`MongoDB conectado (${process.env.NODE_ENV || 'development'})`);
