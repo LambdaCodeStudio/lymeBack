@@ -7,13 +7,12 @@ const cookieParser = require('cookie-parser');
 const compression = require('compression');
 const NodeCache = require('node-cache');
 
-
 // Importar configuraciones y servicios optimizados
 const corsOptions = require('./config/cors');
 const { connectDB, ensureDbConnection } = require('./config/db');
 const { createInitialAdmin } = require('./controllers/auth');
 
-// Importar middleware de seguridad
+// Importar middleware de seguridad con límites optimizados
 const { 
   securityBundle, 
   apiLimiter, 
@@ -25,11 +24,19 @@ const {
 const app = express();
 const path = require('path');
 
-// Configurar Express para servir archivos estáticos
-app.use(express.static(path.join(__dirname, 'public')));
+// Configurar Express para servir archivos estáticos con caché
+app.use(express.static(path.join(__dirname, 'public'), {
+  maxAge: '1d', // Cache de un día para archivos estáticos
+  etag: true,
+  lastModified: true
+}));
 
-// Establecer caché global
-global.cache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
+// Establecer caché global con configuración de alto rendimiento
+global.cache = new NodeCache({ 
+  stdTTL: 600, // 10 minutos (aumentado)
+  checkperiod: 120, // 2 minutos
+  maxKeys: 10000 // Limitar para evitar problemas de memoria
+});
 
 // ===== CONFIGURACIONES BÁSICAS =====
 
@@ -42,24 +49,41 @@ if (process.env.NODE_ENV === 'production') {
   app.set('trust proxy', 'loopback');
 }
 
+// Configuración para alto rendimiento
+app.set('x-powered-by', false); // Eliminar header x-powered-by
+app.set('etag', 'strong'); // Usar etags para optimizar caché de cliente
+
 // ===== MIDDLEWARE DE PRIMERA LÍNEA =====
 // (Estos middleware se ejecutan antes para cada solicitud)
 
 // CORS - Control de acceso de origen cruzado
 app.use(cors(corsOptions));
 
-// Parsers para diferentes formatos de solicitud
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+// Parsers para diferentes formatos de solicitud - optimizados
+app.use(express.json({ 
+  limit: '10mb',
+  strict: true, // Solo aceptar JSON válido
+  type: ['application/json', 'application/json;charset=utf-8']
+}));
+app.use(express.urlencoded({ 
+  extended: true, 
+  limit: '10mb',
+  parameterLimit: 1000 // Limitar número de parámetros para prevenir DoS
+}));
 app.use(cookieParser());
 
-// Compresión para reducir tamaño de respuestas
+// Compresión mejorada para reducir tamaño de respuestas
 app.use(compression({
-  threshold: 100, // No comprimir respuestas menores a 100 bytes
-  level: 6,       // Nivel de compresión equilibrado entre velocidad y tamaño
+  threshold: 1024, // Comprimir respuestas mayores a 1KB
+  level: 4,       // Equilibrio óptimo entre velocidad y compresión
+  memLevel: 8,    // Usar más memoria para mejor compresión
   filter: (req, res) => {
     // No comprimir imágenes o contenido binario (ya están comprimidos)
     if (req.path.includes('/imagen') || req.path.includes('/download')) {
+      return false;
+    }
+    // No comprimir respuestas pequeñas
+    if (parseInt(res.getHeader('Content-Length')) < 1024) {
       return false;
     }
     return compression.filter(req, res);
@@ -68,47 +92,62 @@ app.use(compression({
 
 // ===== MIDDLEWARE DE SEGURIDAD =====
 
-// Protección contra vulnerabilidades web comunes
+// Protección contra vulnerabilidades web comunes - configuración optimizada
 app.use(helmet({
   contentSecurityPolicy: false, // Desactivado para compatibilidad
   crossOriginEmbedderPolicy: false,
   crossOriginOpenerPolicy: true,
-  crossOriginResourcePolicy: { policy: "cross-origin" }
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+  dnsPrefetchControl: { allow: true }, // Permitir prefetch para mejor rendimiento
+  frameguard: { action: 'deny' },
+  hsts: {
+    maxAge: 31536000,
+    includeSubDomains: true,
+    preload: true
+  },
+  referrerPolicy: { policy: 'same-origin' }
 }));
 
-// Aplicar bundle de seguridad (Incluye DoS, XSS, MongoDB injection, etc.)
+// Aplicar bundle de seguridad optimizado para alto rendimiento
 app.use(securityBundle);
 
-// Límite de tasa para prevenir abuso en la API
-// En producción, aplicar limitadores más estrictos
+// Límite de tasa para prevenir abuso en la API - configuración optimizada para 10,000 rpm
 if (process.env.NODE_ENV === 'production') {
-  // Limitar rutas sensibles con configuración más estricta
+  // Rutas críticas necesitan protección especial aún con alto rendimiento
   app.use('/api/auth/login', authLimiter);
   app.use('/api/auth/register', authLimiter);
   
-  // Usar el limitador específico para operaciones de clientes
+  // Operaciones masivas con límites adaptados para alta capacidad (10,000 rpm)
   app.use('/api/cliente', bulkOperationsLimiter);
   
-  // Aplicar limitador general a todas las demás rutas, excluyendo /api/cliente
+  // Aplicar limitador general a todas las demás rutas API
   app.use('/api', (req, res, next) => {
+    // Saltarse la verificación de health check
+    if (req.path === '/health') {
+      return next();
+    }
+    
+    // Saltarse la verificación para rutas de clientes
     if (req.path.startsWith('/cliente')) {
       return next();
     }
+    
     return apiLimiter(req, res, next);
   });
 }
 
 // ===== MIDDLEWARE DE CONEXIÓN A BASE DE DATOS =====
 
-// Asegurar que la conexión a la base de datos esté disponible
+// Asegurar que la conexión a la base de datos esté disponible - optimizado
 app.use(ensureDbConnection);
 
 // ===== RUTAS PÚBLICAS =====
 
-// Ruta de verificación de estado (no requiere autenticación)
+// Ruta de verificación de estado optimizada (no requiere autenticación)
 app.get('/api/health', (req, res) => {
   const mongoose = require('mongoose');
   
+  // Respuesta optimizada sin consultar información innecesaria
   res.status(200).json({ 
     success: true,
     status: 'ok', 
@@ -144,10 +183,10 @@ app.use((req, res) => {
   });
 });
 
-// Middleware para capturar y formatear errores
+// Middleware para capturar y formatear errores - optimizado
 app.use((err, req, res, next) => {
   // Registrar error en consola con detalles
-  console.error('Error no capturado:', err);
+  console.error('Error no capturado:', err.message);
   
   // Determinar código de estado HTTP apropiado
   const statusCode = err.status || err.statusCode || 500;
@@ -208,6 +247,7 @@ if (process.env.NODE_ENV == 'production' || process.env.START_SERVER === 'true')
     =======================================
     🚀 Servidor ejecutándose en puerto ${PORT}
     🌎 Entorno: ${process.env.NODE_ENV || 'development'}
+    🔄 Configurado para 10,000 peticiones por minuto
     📅 ${new Date().toISOString()}
     =======================================
     `);
