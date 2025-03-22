@@ -1,59 +1,49 @@
-// createAdmin.js
 require('dotenv').config();
 const mongoose = require('mongoose');
-const User = require('./src/models/user');
 const bcrypt = require('bcryptjs');
-const ROLES = require('./src/constants/roles');
 
-const createAdmin = async () => {
+const createAdminDirect = async () => {
   try {
     // Conectar a MongoDB
     await mongoose.connect(process.env.MONGODB_URI, {
       serverSelectionTimeoutMS: 5000,
-      socketTimeoutMS: 45000,
-      // Configuraciones adicionales para mejor rendimiento
-      maxPoolSize: 10,
-      compressors: 'zlib',
-      readPreference: 'primaryPreferred'
+      socketTimeoutMS: 45000
     });
     console.log('Conectado a MongoDB');
-
-    // Verificar si ya existe un admin
-    const adminExists = await User.findOne({ role: ROLES.ADMIN });
     
-    if (adminExists) {
-      console.log('Ya existe un usuario administrador');
-      return;
-    }
-
-    // Variables de entorno
-    const adminUsername = process.env.ADMIN_USERNAME || 'admin';
-    const adminPassword = process.env.ADMIN_PASSWORD || '123456'; // Usar una contraseña segura en producción
+    // Verificar si ya existe un admin mediante operación directa
+    const userCollection = mongoose.connection.collection('users');
+    const adminExists = await userCollection.findOne({ role: 'admin' });
     
-    // Crear el admin con la nueva estructura
-    const admin = new User({
-      usuario: adminUsername,
-      password: adminPassword, // El middleware pre-save en el modelo se encargará de hashear la contraseña
-      role: ROLES.ADMIN,
+
+    // Hashear contraseña directamente
+    console.log('Hasheando contraseña...');
+    const plainPassword = '123456';
+    const hashedPassword = await bcrypt.hash(String(plainPassword), 10);
+    console.log('Contraseña hasheada con éxito');
+    
+    // Crear documento directamente sin usar el modelo
+    const result = await userCollection.insertOne({
+      usuario: 'lambda',
+      password: hashedPassword,
+      role: 'admin',
       nombre: 'Administrador',
       apellido: 'Principal',
-      secciones: 'ambos', // Acceso a todas las secciones
-      isActive: true
+      secciones: 'ambos',
+      isActive: true,
+      createdAt: new Date(),
+      updatedAt: new Date()
     });
-
-    await admin.save();
-    console.log(`Usuario administrador "${adminUsername}" creado exitosamente`);
-
+    
+    console.log('Usuario administrador creado exitosamente');
   } catch (error) {
     console.error('Error al crear administrador:', error);
   } finally {
-    // Cerrar conexión
-    if (mongoose.connection.readyState !== 0) {
+    if (mongoose.connection) {
       await mongoose.connection.close();
       console.log('Conexión cerrada');
     }
   }
 };
 
-// Ejecutar la función
-createAdmin().catch(console.error);
+createAdminDirect().catch(console.error);

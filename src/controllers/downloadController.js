@@ -237,8 +237,103 @@ exports.downloadExcel = async (req, res) => {
   }
 };
 
+
+// Agregar al archivo src/controllers/downloadController.js
+
+/**
+ * Generar y descargar un reporte mensual en formato Excel
+ */
+exports.downloadReporteMensual = async (req, res) => {
+  try {
+    const { from, to, clienteId } = req.query;
+    
+    if (!from || !to) {
+      return res.status(400).json({ mensaje: 'Se requieren las fechas de inicio y fin' });
+    }
+    
+    const fechaInicio = new Date(from);
+    const fechaFin = new Date(to);
+    
+    // Validar fechas
+    if (isNaN(fechaInicio.getTime()) || isNaN(fechaFin.getTime())) {
+      return res.status(400).json({ mensaje: 'Formato de fecha inválido' });
+    }
+    
+    // Asegurar que la fecha de fin sea al final del día
+    fechaFin.setHours(23, 59, 59, 999);
+    
+    // Construir condiciones de búsqueda
+    const condiciones = {
+      fecha: { $gte: fechaInicio, $lte: fechaFin }
+    };
+    
+    // Si se proporciona un clienteId, filtrar por ese cliente
+    if (clienteId && mongoose.Types.ObjectId.isValid(clienteId)) {
+      condiciones['cliente.clienteId'] = clienteId;
+    }
+    
+    // Obtener pedidos en el rango de fechas con la información requerida
+    const pedidos = await Pedido.find(condiciones)
+      .populate({
+        path: 'productos.productoId',
+        select: 'nombre precio descripcion categoria'
+      });
+    
+    if (pedidos.length === 0) {
+      return res.status(404).json({ 
+        mensaje: 'No se encontraron pedidos en el rango de fechas especificado' 
+      });
+    }
+    
+    // Usar el servicio de Excel para generar el reporte mensual
+    const excelService = require('../services/excelService');
+    const excelBuffer = await excelService.generarReporteMensual(
+      pedidos, 
+      fechaInicio, 
+      fechaFin, 
+      clienteId || null
+    );
+    
+    // Formatear fechas para el nombre del archivo
+    const fromStr = fechaInicio.toISOString().split('T')[0];
+    const toStr = fechaFin.toISOString().split('T')[0];
+    
+    // Nombre del archivo según si es para un cliente específico o todos
+    let fileName = `reporte_mensual_${fromStr}_${toStr}`;
+    if (clienteId) {
+      // Intentar obtener el nombre del cliente
+      try {
+        const Cliente = require('../models/clienteSchema');
+        const cliente = await Cliente.findById(clienteId);
+        if (cliente) {
+          fileName += `_${cliente.nombre.replace(/\s+/g, '_')}`;
+        }
+      } catch (error) {
+        console.error('Error al obtener nombre del cliente:', error);
+      }
+    }
+    fileName += '.xlsx';
+    
+    // Configurar headers y enviar respuesta
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename=${fileName}`);
+    res.setHeader('Content-Length', excelBuffer.length);
+    res.send(excelBuffer);
+    
+  } catch (error) {
+    console.error('Error al generar reporte mensual:', error);
+    res.status(500).json({ 
+      mensaje: 'Error al generar el reporte mensual', 
+      error: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
+  }
+};
+
+
 // Export both functions
 module.exports = {
   downloadExcel: exports.downloadExcel,
-  downloadRemito: exports.downloadRemito
+  downloadRemito: exports.downloadRemito,
+  downloadReporteMensual: exports.downloadReporteMensual
 };
