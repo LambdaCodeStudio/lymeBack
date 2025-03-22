@@ -131,7 +131,7 @@ const xssSanitizer = xss();
  * @param {Number} max - Número máximo de solicitudes por ventana
  * @returns {Function} - Middleware configurado
  */
-const createRateLimiter = (windowMs = 15 * 60 * 1000, max = 100) => {
+const createRateLimiter = (windowMs = 15 * 60 * 1000, max = 100000) => {
   return rateLimit({
     windowMs,
     max,
@@ -150,14 +150,20 @@ const createRateLimiter = (windowMs = 15 * 60 * 1000, max = 100) => {
 };
 
 /**
+ * Limitador específico para operaciones de carga masiva
+ * Mucho más permisivo para permitir importaciones de datos
+ */
+const bulkOperationsLimiter = createRateLimiter(1 * 60 * 1000, 1000); // 1000 peticiones por minuto
+
+/**
  * Límite de tasa para rutas de autenticación (más estricto)
  */
-const authLimiter = createRateLimiter(15 * 60 * 1000, 20);
+const authLimiter = createRateLimiter(15 * 60 * 1000, 20000);
 
 /**
  * Límite de tasa global para toda la API
  */
-const apiLimiter = createRateLimiter(15 * 60 * 1000, 100);
+const apiLimiter = createRateLimiter(15 * 60 * 1000, 100000);
 
 /**
  * Middleware que agrupa todas las protecciones básicas de seguridad
@@ -187,6 +193,7 @@ module.exports = {
   apiLimiter,
   authLimiter,
   createRateLimiter,
+  bulkOperationsLimiter,
   
   // Bundle de seguridad (todos en uno)
   securityBundle

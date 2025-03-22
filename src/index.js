@@ -17,7 +17,8 @@ const { createInitialAdmin } = require('./controllers/auth');
 const { 
   securityBundle, 
   apiLimiter, 
-  authLimiter 
+  authLimiter,
+  bulkOperationsLimiter
 } = require('./middleware/security');
 
 // Crear app Express
@@ -85,8 +86,16 @@ if (process.env.NODE_ENV === 'production') {
   app.use('/api/auth/login', authLimiter);
   app.use('/api/auth/register', authLimiter);
   
-  // Aplicar limitador general a todas las rutas
-  app.use('/api', apiLimiter);
+  // Usar el limitador específico para operaciones de clientes
+  app.use('/api/cliente', bulkOperationsLimiter);
+  
+  // Aplicar limitador general a todas las demás rutas, excluyendo /api/cliente
+  app.use('/api', (req, res, next) => {
+    if (req.path.startsWith('/cliente')) {
+      return next();
+    }
+    return apiLimiter(req, res, next);
+  });
 }
 
 // ===== MIDDLEWARE DE CONEXIÓN A BASE DE DATOS =====

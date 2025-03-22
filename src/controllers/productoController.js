@@ -8,7 +8,7 @@ const sharp = require('sharp');
 
 // Definir rutas base como constantes
 // Ajusta la ruta para encontrar correctamente la carpeta public
-const BASE_DIR = path.resolve(__dirname, '..'); // Subir un nivel desde /controllers a la raíz del proyecto
+const BASE_DIR = path.resolve(__dirname, '../..'); // Subir un nivel desde /controllers a la raíz del proyecto
 const IMAGES_DIR = path.join(BASE_DIR, 'public', 'images', 'products');
 const IMAGES_URL_PREFIX = '/images/products'; // URL relativa para el frontend
 
