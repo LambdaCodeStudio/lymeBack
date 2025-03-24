@@ -1,4 +1,3 @@
-// src/controllers/productoController.js
 const productoLogic = require('../logic/productoLogic');
 const Producto = require('../models/productoSchema');
 const mongoose = require('mongoose');
@@ -14,9 +13,26 @@ const IMAGES_URL_PREFIX = '/images/products'; // URL relativa para el frontend
 
 // Asegurar que el directorio existe al iniciar el controlador
 if (!fs.existsSync(IMAGES_DIR)) {
-  fs.mkdirSync(IMAGES_DIR, { recursive: true });
-  console.log(`Directorio de imágenes creado: ${IMAGES_DIR}`);
-}
+    fs.mkdirSync(IMAGES_DIR, { recursive: true });
+    console.log(`Directorio de imágenes creado: ${IMAGES_DIR}`);
+  }
+
+
+// Implementar función de fallback para invalidar caché si no está disponible
+const invalidarCachePorClave = function(key) {
+    if (typeof productoLogic.invalidarCachePorClave === 'function') {
+      // Usar la implementación original si existe
+      return productoLogic.invalidarCachePorClave(key);
+    } else {
+      // Función de fallback
+      console.log(`[Fallback] Invalidando caché para ${key}`);
+      // Si existe una función general de invalidación de caché, usarla
+      if (typeof productoLogic.invalidarCache === 'function') {
+        productoLogic.invalidarCache();
+      }
+      return Promise.resolve(); // Devolver una promesa resuelta para mantener la compatibilidad con async/await
+    }
+  };
 
 // Función mejorada para obtener productos con múltiples filtros
 async function obtenerTodos(req, res) {
@@ -44,6 +60,14 @@ async function obtenerTodos(req, res) {
         const precioMax = req.query.precioMax ? parseFloat(req.query.precioMax) : undefined;
         const estado = req.query.estado;
         const updatedAfter = req.query.updatedAfter;
+        
+        // AÑADIDO: Soporte para filtro de combos
+        const esCombo = req.query.esCombo === 'true';
+        
+        // AÑADIDO: Soporte para búsqueda progresiva con regex
+        const regex = req.query.regex || '';
+        const regexFields = req.query.regexFields || '';
+        const regexOptions = req.query.regexOptions || '';
         
         // Obtener sección del usuario desde el token de autenticación
         const userSeccion = req.user ? req.user.secciones : null;
@@ -93,9 +117,18 @@ async function obtenerTodos(req, res) {
                 query.updatedAfter = updatedAfter;
             }
             
-            // Filtro de búsqueda por texto
-            if (searchTerm) {
+            // CORREGIDO: Filtro de búsqueda por texto o regex
+            if (regex) {
+                query.regex = regex;
+                if (regexFields) query.regexFields = regexFields;
+                if (regexOptions) query.regexOptions = regexOptions;
+            } else if (searchTerm) {
                 query.texto = searchTerm;
+            }
+            
+            // AÑADIDO: Filtro de combo
+            if (esCombo) {
+                query.esCombo = true;
             }
         }
         
@@ -392,6 +425,7 @@ async function uploadImagen(req, res) {
             $set: { 
               imagen: null, // No guardar imagen binaria
               imageUrl: imageUrl,
+              hasImage: true, // Añadir un campo explícito que indique que tiene imagen
               imagenInfo: {
                 mimetype: 'image/webp',
                 rutaArchivo: rutaArchivo,
@@ -402,6 +436,9 @@ async function uploadImagen(req, res) {
           },
           { new: true }
         );
+        
+        // Invalidar caché para este producto usando la función de fallback
+        await invalidarCachePorClave(`producto_${id}`);
         
         return res.status(200).json({
           success: true,
@@ -506,10 +543,14 @@ async function deleteImagen(req, res) {
           $set: { 
             imagen: null,
             imageUrl: null,
+            hasImage: false, // Actualizar campo explícito
             imagenInfo: null
           }
         }
       );
+      
+      // Invalidar caché para este producto usando la función de fallback
+      await invalidarCachePorClave(`producto_${id}`);
       
       return res.status(200).json({ 
         success: true, 

@@ -169,6 +169,12 @@ async function obtenerProductosPaginados(query = {}, page = 1, limit = 20, userS
         query.stock = { $lte: threshold, $gt: 0 };
     }
     
+    // AÑADIDO: Procesar filtro de combos correctamente
+    if (query.esCombo === 'true' || query.esCombo === true) {
+        query.esCombo = true;
+        console.log('Filtrando por productos que son combos');
+    }
+    
     // NUEVA FUNCIONALIDAD: Filtrar por estado
     if (query.estado) {
         query.estado = query.estado;
@@ -206,13 +212,14 @@ async function obtenerProductosPaginados(query = {}, page = 1, limit = 20, userS
         delete query.updatedAfter;
     }
 
-    //Nueva: busqueda de texto progresiva
+    //CORREGIDO: Busqueda de texto progresiva mejorada
     if (query.regex) {
         const regexFields = query.regexFields ? query.regexFields.split(',') : ['nombre'];
         const regexOptions = query.regexOptions || 'i'; // 'i' para ignorar mayúsculas/minúsculas
         delete query.regexFields;
         delete query.regexOptions;
         
+        // No escapar el regex - usarlo directamente para búsqueda progresiva
         const regexPattern = query.regex;
         delete query.regex;
         
