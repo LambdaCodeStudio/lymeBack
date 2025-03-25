@@ -1,19 +1,27 @@
 // src/routes/downloadRoutes.js
 const express = require('express');
-const downloadController = require('../controllers/downloadController');
-const { auth } = require('../middleware/auth');
-
 const router = express.Router();
+const downloadController = require('../controllers/downloadController');
 
-// Aplicar middleware de autenticación a todas las rutas
-router.use(auth);
-
-// Descargar remito PDF
+/**
+ * @route   GET /api/downloads/remito/:id
+ * @desc    Descargar un remito en formato PDF
+ * @access  Private
+ */
 router.get('/remito/:id', downloadController.downloadRemito);
 
-// Descargar reporte Excel
+/**
+ * @route   GET /api/downloads/excel
+ * @desc    Descargar un reporte Excel de pedidos por rango de fechas
+ * @access  Private
+ */
 router.get('/excel', downloadController.downloadExcel);
 
-router.get('/reporte-mensual', downloadController.downloadReporteMensual);
+/**
+ * @route   GET /api/downloads/mensual/:month/:year
+ * @desc    Descargar un reporte mensual
+ * @access  Private
+ */
+router.get('/mensual/:month/:year', downloadController.downloadReporteMensual);
 
 module.exports = router;
