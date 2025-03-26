@@ -280,50 +280,7 @@ const obtenerPedidosOrdenados = async (opciones = {}) => {
  * Crea un nuevo pedido y actualiza el stock de productos
  */
 const crearPedido = async (data) => {
-    // Preparar datos de cliente jerárquico si no vienen incluidos
-    if (data.clienteId && !data.cliente) {
-        const cliente = await Cliente.findById(data.clienteId);
-        if (cliente) {
-            data.cliente = {
-                clienteId: cliente._id,
-                nombreCliente: cliente.nombre || cliente.servicio
-            };
-            
-            // Si hay servicio y sección para compatibilidad
-            if (!data.servicio) {
-                data.servicio = cliente.nombre || cliente.servicio;
-            }
-            if (!data.seccionDelServicio && cliente.seccionDelServicio) {
-                data.seccionDelServicio = cliente.seccionDelServicio;
-            }
-        }
-    }
-    
-    // Si tenemos un subServicioId pero no un supervisorId, intentar obtener el supervisor del subServicio
-    if (!data.supervisorId && 
-        data.cliente && 
-        data.cliente.clienteId && 
-        data.cliente.subServicioId) {
-        
-        try {
-            const cliente = await Cliente.findById(data.cliente.clienteId);
-            
-            if (cliente) {
-                // Buscar el subServicio correspondiente
-                const subServicio = cliente.subServicios.id(data.cliente.subServicioId);
-                
-                if (subServicio && subServicio.supervisorId) {
-                    // Asignar el supervisor del subServicio al pedido
-                    data.supervisorId = subServicio.supervisorId;
-                }
-            }
-        } catch (err) {
-            console.error('Error al obtener supervisor de subServicio:', err);
-            // Continuar sin asignar supervisor
-        }
-    }
-    
-    // Creamos el pedido
+    // Creamos el pedido primero
     const nuevoPedido = new Pedido(data);
     
     try {
@@ -331,23 +288,25 @@ const crearPedido = async (data) => {
         for (const item of data.productos) {
             const { productoId, cantidad } = item;
             
-            // Verificar si hay suficiente stock
+            // Obtener la información del producto
             const producto = await productoLogic.obtenerPorId(productoId);
-            if (!producto || producto.stock < cantidad) {
-                throw new Error(`Stock insuficiente para el producto con ID: ${productoId}`);
+            if (!producto) {
+                throw new Error(`Producto no encontrado con ID: ${productoId}`);
             }
             
-            // Guardar precio unitario actual para el historial
-            item.precioUnitario = producto.precio;
+            // Verificar stock SOLO para productos de limpieza
+            if (producto.categoria === 'limpieza' && producto.stock < cantidad) {
+                throw new Error(`Stock insuficiente para el producto de limpieza "${producto.nombre}". Stock actual: ${producto.stock}, Solicitado: ${cantidad}`);
+            }
             
-            // Reducir el stock
+            // Para productos de mantenimiento o con stock suficiente, actualizar
             await productoLogic.actualizarProducto(productoId, {
                 stock: producto.stock - cantidad,
                 vendidos: (producto.vendidos || 0) + cantidad
             });
         }
         
-        // Guardamos el pedido
+        // Guardamos el pedido una vez que se haya actualizado el stock correctamente
         return await nuevoPedido.save();
     } catch (error) {
         throw error;
@@ -357,119 +316,126 @@ const crearPedido = async (data) => {
 /**
  * Actualiza un pedido existente y ajusta el stock de productos
  */
+// Función actualizada para actualizar pedido
 const actualizarPedido = async (id, data) => {
     // Obtenemos el pedido actual para comparar los productos
-    const pedidoActual = await Pedido.findById(id);
+    const pedidoActual = await Pedido.findById(id)
+        .populate('productos.productoId');
+    
     if (!pedidoActual) {
         throw new Error('Pedido no encontrado');
     }
     
     try {
-        // Verificar cambios en cliente jerárquico
-        if (data.clienteId && !data.cliente) {
-            const cliente = await Cliente.findById(data.clienteId);
-            if (cliente) {
-                data.cliente = {
-                    clienteId: cliente._id,
-                    nombreCliente: cliente.nombre || cliente.servicio
-                };
-                
-                // Actualizar campos de compatibilidad
-                if (!data.servicio) {
-                    data.servicio = cliente.nombre || cliente.servicio;
-                }
-                if (!data.seccionDelServicio) {
-                    data.seccionDelServicio = cliente.seccionDelServicio || '';
-                }
-            }
+        // Caso especial: Pedido pasando a estado rechazado
+        if (data.estado === 'rechazado' && pedidoActual.estado !== 'rechazado') {
+            return await rechazarPedido(id);
         }
         
-        // Si hay productos, comparamos con los anteriores
-        if (data.productos && Array.isArray(data.productos)) {
-            // Creamos mapas para comparar productos anteriores y nuevos
-            const productosAnteriores = pedidoActual.productos.reduce((map, item) => {
-                const idProducto = typeof item.productoId === 'object' ? 
-                    item.productoId._id.toString() : item.productoId.toString();
-                map[idProducto] = item.cantidad;
-                return map;
-            }, {});
-            
-            const productosNuevos = data.productos.reduce((map, item) => {
-                map[item.productoId.toString()] = item.cantidad;
-                return map;
-            }, {});
-            
-            // Para cada producto en el nuevo pedido
-            for (const [productoId, cantidadNueva] of Object.entries(productosNuevos)) {
-                const cantidadAnterior = productosAnteriores[productoId] || 0;
+        // Caso especial: Pedido pasando de rechazado a aprobado
+        // Necesitamos volver a reducir el stock como si fuera un pedido nuevo
+        if (pedidoActual.estado === 'rechazado' && data.estado === 'aprobado') {
+            // Reducir el stock de cada producto en el pedido
+            for (const item of pedidoActual.productos) {
+                const productoId = typeof item.productoId === 'object' ? 
+                    item.productoId._id : item.productoId;
+                const cantidad = item.cantidad;
                 
-                // Si hay más productos que antes, reducimos el stock
-                if (cantidadNueva > cantidadAnterior) {
-                    const diferencia = cantidadNueva - cantidadAnterior;
-                    const producto = await productoLogic.obtenerPorId(productoId);
-                    
-                    // Verificar si hay suficiente stock
-                    if (!producto || producto.stock < diferencia) {
-                        throw new Error(`Stock insuficiente para el producto con ID: ${productoId}`);
-                    }
-                    
-                    // Guardar precio unitario actual para nuevos productos o aumento de cantidad
-                    const productoIndex = data.productos.findIndex(
-                        p => p.productoId.toString() === productoId
-                    );
-                    if (productoIndex >= 0 && !data.productos[productoIndex].precioUnitario) {
-                        data.productos[productoIndex].precioUnitario = producto.precio;
-                    }
-                    
-                    // Reducir el stock
-                    await productoLogic.actualizarProducto(productoId, {
-                        stock: producto.stock - diferencia,
-                        vendidos: (producto.vendidos || 0) + diferencia
-                    });
-                } 
-                // Si hay menos productos que antes, aumentamos el stock
-                else if (cantidadNueva < cantidadAnterior) {
-                    const diferencia = cantidadAnterior - cantidadNueva;
-                    const producto = await productoLogic.obtenerPorId(productoId);
-                    
-                    // Aumentar el stock
-                    await productoLogic.actualizarProducto(productoId, {
-                        stock: producto.stock + diferencia,
-                        vendidos: Math.max(0, (producto.vendidos || 0) - diferencia)
-                    });
+                // Obtener producto actual
+                const producto = await productoLogic.obtenerPorId(productoId);
+                
+                if (!producto) {
+                    throw new Error(`Producto no encontrado con ID: ${productoId}`);
                 }
+                
+                // Verificar stock SOLO para productos de limpieza
+                if (producto.categoria === 'limpieza' && producto.stock < cantidad) {
+                    throw new Error(`Stock insuficiente para el producto de limpieza "${producto.nombre}". 
+                    No se puede aprobar el pedido debido a falta de stock.`);
+                }
+                
+                // Reducir el stock nuevamente
+                await productoLogic.actualizarProducto(productoId, {
+                    stock: producto.stock - cantidad,
+                    vendidos: (producto.vendidos || 0) + cantidad
+                });
             }
             
-            // Para cada producto que estaba antes pero no está en el nuevo pedido
-            for (const [productoId, cantidadAnterior] of Object.entries(productosAnteriores)) {
-                if (!productosNuevos[productoId]) {
-                    // Devolvemos todo el stock
-                    const producto = await productoLogic.obtenerPorId(productoId);
-                    if (producto) {
-                        await productoLogic.actualizarProducto(productoId, {
-                            stock: producto.stock + cantidadAnterior,
-                            vendidos: Math.max(0, (producto.vendidos || 0) - cantidadAnterior)
-                        });
-                    }
-                }
-            }
+            // Actualizar estado a aprobado sin modificar los productos
+            return await Pedido.findByIdAndUpdate(id, { estado: 'aprobado' }, { new: true });
         }
         
-        // Si el pedido cambia a "aprobado", registramos la fecha
-        if (data.estado === 'aprobado' && pedidoActual.estado !== 'aprobado') {
-            data.fechaAprobacion = new Date();
-            // Si tenemos usuario en el contexto, lo guardamos como aprobador
-            if (data.aprobadoPor) {
-                data.aprobadoPor = data.aprobadoPor;
+        // Para los demás casos, continúa con la lógica normal de actualización
+        
+        // Creamos mapas para comparar productos anteriores y nuevos
+        const productosAnteriores = pedidoActual.productos.reduce((map, item) => {
+            const idProducto = typeof item.productoId === 'object' ? 
+                item.productoId._id.toString() : item.productoId.toString();
+            map[idProducto] = item.cantidad;
+            return map;
+        }, {});
+        
+        // Si no hay cambio en los productos, usamos los existentes
+        const productosNuevos = data.productos ? data.productos.reduce((map, item) => {
+            map[item.productoId.toString()] = item.cantidad;
+            return map;
+        }, {}) : productosAnteriores;
+        
+        // Para cada producto en el nuevo pedido
+        for (const [productoId, cantidadNueva] of Object.entries(productosNuevos)) {
+            const cantidadAnterior = productosAnteriores[productoId] || 0;
+            
+            // Si hay más productos que antes, reducimos el stock
+            if (cantidadNueva > cantidadAnterior) {
+                const diferencia = cantidadNueva - cantidadAnterior;
+                const producto = await productoLogic.obtenerPorId(productoId);
+                
+                if (!producto) {
+                    throw new Error(`Producto no encontrado con ID: ${productoId}`);
+                }
+                
+                // Verificar stock SOLO para productos de limpieza
+                if (producto.categoria === 'limpieza' && producto.stock < diferencia) {
+                    throw new Error(`Stock insuficiente para el producto de limpieza "${producto.nombre}". 
+                    Stock actual: ${producto.stock}, Incremento solicitado: ${diferencia}`);
+                }
+                
+                // Reducir el stock
+                await productoLogic.actualizarProducto(productoId, {
+                    stock: producto.stock - diferencia,
+                    vendidos: (producto.vendidos || 0) + diferencia
+                });
+            } 
+            // Si hay menos productos que antes, aumentamos el stock
+            else if (cantidadNueva < cantidadAnterior) {
+                const diferencia = cantidadAnterior - cantidadNueva;
+                const producto = await productoLogic.obtenerPorId(productoId);
+                
+                // Aumentar el stock
+                await productoLogic.actualizarProducto(productoId, {
+                    stock: producto.stock + diferencia,
+                    vendidos: Math.max(0, (producto.vendidos || 0) - diferencia)
+                });
+            }
+            // Si es igual, no hacemos nada
+        }
+        
+        // Para cada producto que estaba antes pero no está en el nuevo pedido
+        for (const [productoId, cantidadAnterior] of Object.entries(productosAnteriores)) {
+            if (!productosNuevos[productoId]) {
+                // Devolvemos todo el stock
+                const producto = await productoLogic.obtenerPorId(productoId);
+                if (producto) {
+                    await productoLogic.actualizarProducto(productoId, {
+                        stock: producto.stock + cantidadAnterior,
+                        vendidos: Math.max(0, (producto.vendidos || 0) - cantidadAnterior)
+                    });
+                }
             }
         }
         
         // Actualizamos el pedido
-        return await Pedido.findByIdAndUpdate(id, data, { new: true })
-            .populate('userId', 'nombre email usuario apellido')
-            .populate('supervisorId', 'nombre email usuario apellido')
-            .populate('productos.productoId')
-            .populate('cliente.clienteId', 'nombre');
+        return await Pedido.findByIdAndUpdate(id, data, { new: true });
     } catch (error) {
         throw error;
     }
@@ -478,6 +444,7 @@ const actualizarPedido = async (id, data) => {
 /**
  * Elimina un pedido y restaura el stock de productos
  */
+// Modified function to avoid duplicate stock restoration
 const eliminarPedido = async (id) => {
     // Obtenemos el pedido para restaurar el stock
     const pedido = await Pedido.findById(id);
@@ -486,21 +453,25 @@ const eliminarPedido = async (id) => {
     }
     
     try {
-        // Restauramos el stock de cada producto
-        for (const item of pedido.productos) {
-            const productoId = typeof item.productoId === 'object' ? 
-                item.productoId._id : item.productoId;
-            const cantidad = item.cantidad;
-            
-            // Obtener producto actual
-            const producto = await productoLogic.obtenerPorId(productoId);
-            if (producto) {
-                // Aumentar stock y reducir vendidos
-                await productoLogic.actualizarProducto(productoId, {
-                    stock: producto.stock + cantidad,
-                    vendidos: Math.max(0, (producto.vendidos || 0) - cantidad)
-                });
+        // Restauramos el stock de cada producto SOLO si el pedido NO está rechazado
+        // ya que si está rechazado, el stock ya fue restaurado previamente
+        if (pedido.estado !== 'rechazado') {
+            for (const item of pedido.productos) {
+                const productoId = typeof item.productoId === 'object' ? item.productoId._id : item.productoId;
+                const cantidad = item.cantidad;
+                
+                // Obtener producto actual
+                const producto = await productoLogic.obtenerPorId(productoId);
+                if (producto) {
+                    // Aumentar stock y reducir vendidos
+                    await productoLogic.actualizarProducto(productoId, {
+                        stock: producto.stock + cantidad,
+                        vendidos: Math.max(0, (producto.vendidos || 0) - cantidad)
+                    });
+                }
             }
+        } else {
+            console.log(`Pedido ${id} ya está rechazado, no se restaura stock al eliminarlo.`);
         }
         
         // Eliminamos el pedido
@@ -794,6 +765,102 @@ const procesarFecha = (fecha, esInicio = true) => {
     return fechaObj;
 };
 
+const rechazarPedido = async (id) => {
+    // Obtenemos el pedido 
+    const pedido = await Pedido.findById(id)
+        .populate('productos.productoId');
+    
+    if (!pedido) {
+        throw new Error('Pedido no encontrado');
+    }
+    
+    // Solo restauramos el stock si el pedido no estaba ya rechazado
+    if (pedido.estado !== 'rechazado') {
+        try {
+            // Restauramos el stock de cada producto
+            for (const item of pedido.productos) {
+                const productoId = typeof item.productoId === 'object' ? item.productoId._id : item.productoId;
+                const cantidad = item.cantidad;
+                
+                // Obtener producto actual
+                const producto = await productoLogic.obtenerPorId(productoId);
+                if (producto) {
+                    // Aumentar stock y reducir vendidos
+                    await productoLogic.actualizarProducto(productoId, {
+                        stock: producto.stock + cantidad,
+                        vendidos: Math.max(0, (producto.vendidos || 0) - cantidad)
+                    });
+                }
+            }
+            
+            // Actualizamos el estado del pedido a rechazado
+            pedido.estado = 'rechazado';
+            await pedido.save();
+            
+            return pedido;
+        } catch (error) {
+            throw error;
+        }
+    } else {
+        // Si ya estaba rechazado, simplemente devolvemos el pedido
+        return pedido;
+    }
+};
+
+// Función para aprobar un pedido rechazado y reducir el stock nuevamente
+const aprobarPedido = async (id) => {
+    // Obtenemos el pedido 
+    const pedido = await Pedido.findById(id)
+        .populate('productos.productoId');
+    
+    if (!pedido) {
+        throw new Error('Pedido no encontrado');
+    }
+    
+    // Solo procesamos si el pedido estaba rechazado
+    if (pedido.estado === 'rechazado') {
+        try {
+            // Reducir el stock de cada producto
+            for (const item of pedido.productos) {
+                const productoId = typeof item.productoId === 'object' ? 
+                    item.productoId._id : item.productoId;
+                const cantidad = item.cantidad;
+                
+                // Obtener producto actual
+                const producto = await productoLogic.obtenerPorId(productoId);
+                
+                if (!producto) {
+                    throw new Error(`Producto no encontrado con ID: ${productoId}`);
+                }
+                
+                // Verificar stock SOLO para productos de limpieza
+                if (producto.categoria === 'limpieza' && producto.stock < cantidad) {
+                    throw new Error(`No se puede aprobar el pedido. Stock insuficiente para el producto de limpieza "${producto.nombre}". Stock actual: ${producto.stock}, Solicitado: ${cantidad}`);
+                }
+                
+                // Reducir el stock nuevamente
+                await productoLogic.actualizarProducto(productoId, {
+                    stock: producto.stock - cantidad,
+                    vendidos: (producto.vendidos || 0) + cantidad
+                });
+            }
+            
+            // Actualizamos el estado del pedido a aprobado
+            pedido.estado = 'aprobado';
+            await pedido.save();
+            
+            return pedido;
+        } catch (error) {
+            throw error;
+        }
+    } else {
+        // Si ya estaba aprobado o pendiente, simplemente actualizamos el estado
+        pedido.estado = 'aprobado';
+        await pedido.save();
+        return pedido;
+    }
+};
+
 module.exports = {
     obtenerPedidos,
     obtenerPedidoPorId,
@@ -811,5 +878,7 @@ module.exports = {
     obtenerPedidosOrdenados,
     obtenerCorteControlPedidos,
     obtenerEstadisticasPedidos,
-    procesarFecha
+    procesarFecha,
+    rechazarPedido,
+    aprobarPedido
 };

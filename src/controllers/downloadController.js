@@ -59,7 +59,7 @@ const downloadRemito = async (req, res) => {
     const pedido = await Pedido.findById(pedidoId)
       .populate({
         path: 'userId',
-        select: 'nombre email'
+         select: 'nombre email usuario apellido'
       })
       .populate({
         path: 'productos.productoId',

@@ -17,8 +17,9 @@ router.get('/', pedidoController.getPedidos);
 router.get('/corte-control', pedidoController.getPedidosCorteControl);
 router.get('/estadisticas', pedidoController.getPedidosEstadisticas);
 
-//Pedidos rechazados
-router.post('/:id/rechazar', auth, pedidoController.rechazarPedido);
+// Rutas específicas para acciones sobre pedidos
+router.post('/:id/rechazar', pedidoController.rechazarPedido);
+router.post('/:id/aprobar', pedidoController.aprobarPedido);
 router.get('/operario/:operarioId', pedidoController.getPedidosByOperarioId);
 router.get('/operario/:operarioId/rechazados', pedidoController.getPedidosRechazadosByOperarioId);
 

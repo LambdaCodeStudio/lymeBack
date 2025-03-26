@@ -186,7 +186,7 @@ async function crearProducto(req, res) {
         // Validar stock según categoría
         if (req.body.categoria === 'limpieza' && req.body.stock < 1) {
             return res.status(400).json({ 
-                error: 'Los productos de limpieza deben tener stock mínimo de 1' 
+                error: 'Los productos de limpieza deben tener stock mínimo de 0' 
             });
         }
         
@@ -230,9 +230,9 @@ async function actualizarProducto(req, res) {
         
         // Validar stock según categoría actual o nueva
         const categoriaFinal = req.body.categoria || productoActual.categoria;
-        if (categoriaFinal === 'limpieza' && req.body.stock !== undefined && req.body.stock < 1) {
+        if (categoriaFinal === 'limpieza' && req.body.stock !== undefined && req.body.stock < 0) {
             return res.status(400).json({ 
-                error: 'Los productos de limpieza deben tener stock mínimo de 1' 
+                error: 'Los productos de limpieza deben tener stock mínimo de 0' 
             });
         }
         

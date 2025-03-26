@@ -134,8 +134,8 @@ const productoSchema = new mongoose.Schema({
         return true;
       },
       message: props => {
-        if (props.value < 1 && this.categoria === 'limpieza') {
-          return 'Los productos de limpieza deben tener stock mínimo de 1';
+        if (props.value < 0 && this.categoria === 'limpieza') {
+          return 'Los productos de limpieza deben tener stock mínimo de 0';
         }
         return 'Error de validación de stock';
       }

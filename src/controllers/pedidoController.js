@@ -722,3 +722,35 @@ exports.getPedidosRechazadosByOperarioId = async (req, res) => {
         });
     }
 };
+
+exports.rechazarPedido = async (req, res) => {
+    try {
+        const pedido = await pedidoLogic.rechazarPedido(req.params.id);
+        res.json({
+            mensaje: 'Pedido rechazado correctamente y stock restaurado',
+            pedido
+        });
+    } catch (error) {
+        console.error('Error al rechazar pedido:', error);
+        res.status(500).json({ 
+            mensaje: 'Error al rechazar pedido', 
+            error: error.message 
+        });
+    }
+};
+
+exports.aprobarPedido = async (req, res) => {
+    try {
+        const pedido = await pedidoLogic.aprobarPedido(req.params.id);
+        res.json({
+            mensaje: 'Pedido aprobado correctamente',
+            pedido
+        });
+    } catch (error) {
+        console.error('Error al aprobar pedido:', error);
+        res.status(500).json({ 
+            mensaje: 'Error al aprobar pedido', 
+            error: error.message 
+        });
+    }
+};

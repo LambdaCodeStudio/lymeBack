@@ -551,8 +551,8 @@ async function crearProducto(datos) {
     }
     
     // Validar stock según categoría
-    if (datos.categoria === 'limpieza' && datos.stock < 1) {
-        throw new Error('Los productos de limpieza deben tener stock mínimo de 1');
+    if (datos.categoria === 'limpieza' && datos.stock < 0) {
+        throw new Error('Los productos de limpieza deben tener stock mínimo de 0');
     }
     
     // NUEVA FUNCIONALIDAD: Inicializar historialPrecios al crear producto
@@ -593,14 +593,14 @@ async function actualizarProducto(id, datos) {
     // Validación de stock para productos de limpieza
     if (datos.stock !== undefined) {
         // Si se está actualizando la categoría también
-        if (datos.categoria === 'limpieza' && datos.stock < 1) {
-            throw new Error('Los productos de limpieza deben tener stock mínimo de 1');
+        if (datos.categoria === 'limpieza' && datos.stock < 0) {
+            throw new Error('Los productos de limpieza deben tener stock mínimo de 0');
         } 
         // Si solo se actualiza el stock, necesitamos verificar la categoría actual
         else if (datos.categoria === undefined) {
             const productoActual = await Producto.findById(id);
-            if (productoActual && productoActual.categoria === 'limpieza' && datos.stock < 1) {
-                throw new Error('Los productos de limpieza deben tener stock mínimo de 1');
+            if (productoActual && productoActual.categoria === 'limpieza' && datos.stock < 0) {
+                throw new Error('Los productos de limpieza deben tener stock mínimo de 0');
             }
         }
     }
@@ -675,12 +675,13 @@ async function venderProducto(id) {
         return null;
     }
     
-    // Para productos de limpieza, el stock debe ser > 1 para poder vender
+    // Para productos de limpieza, el stock debe ser > 0 para poder vender
     if (producto.categoria === 'limpieza' && producto.stock <= 0) {
-        return null; // No se puede reducir por debajo de 1
+        return null; // No se puede reducir por debajo de 0
     }
     
     // Para productos de mantenimiento, permitir stock negativo
+    // O si hay stock positivo para cualquier categoría
     if (producto.categoria === 'mantenimiento' || producto.stock > 0) {
         // Si es un combo, reducir stock de los componentes
         if (producto.esCombo && producto.itemsCombo.length > 0) {
@@ -691,11 +692,13 @@ async function venderProducto(id) {
                     return null;
                 }
                 
-                // Para componentes de limpieza, no permitir reducir por debajo de 1
+                // Solo para componentes de limpieza, verificar stock mínimo
                 if (componenteProducto.categoria === 'limpieza' && 
-                    componenteProducto.stock - item.cantidad < 0) {
+                    componenteProducto.stock - item.cantidad < 1) {
                     return null;
                 }
+                // No verificamos stock para componentes de mantenimiento
+                // permitiendo que sean negativos
             }
             
             // Reducir stock de cada componente
@@ -712,26 +715,8 @@ async function venderProducto(id) {
             }
         }
         
-        // NUEVA FUNCIONALIDAD: Actualizar historial de ventas
-        const fechaActual = new Date();
-        producto.ultimaVenta = fechaActual;
-        
-        // Registrar venta con la cantidad actual (siempre 1)
-        if (!producto.historialVentas) {
-            producto.historialVentas = [];
-        }
-        
-        producto.historialVentas.push({
-            cantidad: 1,
-            fecha: fechaActual
-        });
-        
-        // Actualizar stock y contador de vendidos
         producto.stock -= 1;
         producto.vendidos += 1;
-        
-        // Actualizar alerta de stock bajo
-        producto.alertaStockBajo = producto.stock <= producto.stockMinimo;
         
         const result = await producto.save();
         
