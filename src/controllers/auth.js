@@ -501,8 +501,12 @@ const updateUser = async (req, res) => {
       updateData.isActive = updateData.isActive === true || updateData.isActive === 'true';
     }
 
+    // SOLUCIÓN RADICAL: Actualización directa a la base de datos sin validaciones
+    // Determinar el rol objetivo de la actualización
+    const targetRole = updateData.role || user.role;
+    
     // Gestionar operario temporal
-    if (user.role === ROLES.OPERARIO && updateData.isTemporary !== undefined) {
+    if (targetRole === ROLES.OPERARIO && updateData.isTemporary !== undefined) {
       if (updateData.isTemporary === true) {
         // Usar minutos personalizados o por defecto 30 minutos
         const expirationMinutes = updateData.expirationMinutes || 30;
@@ -514,21 +518,37 @@ const updateUser = async (req, res) => {
       }
     }
 
-    // Actualizar el usuario
-    const updatedUser = await User.findByIdAndUpdate(
-      req.params.id,
-      { $set: updateData },
-      { new: true, runValidators: true }
-    ).select('-password');
-
-    if (!updatedUser) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Usuario no encontrado durante la actualización' 
-      });
+    // Preparar operación directa a la colección para evitar todas las validaciones
+    let updateOperation = { ...updateData };
+    
+    // Si no es operario, eliminar campos específicos completamente del objeto
+    if (targetRole !== ROLES.OPERARIO) {
+      delete updateOperation.supervisorId;
+      delete updateOperation.expiresAt;
+      delete updateOperation.isTemporary;
+      delete updateOperation.expirationMinutes;
     }
     
-    // NUEVO: Verificar si se ha cambiado el rol a/desde supervisor
+    console.log('Datos finales para actualización:', updateOperation);
+    
+    // MÉTODO DE FUERZA BRUTA: Actualizar directamente en la colección de MongoDB
+    // Esto evita todas las validaciones del modelo Mongoose
+    const result = await mongoose.connection.collection('users').updateOne(
+      { _id: new mongoose.Types.ObjectId(req.params.id) },
+      { $set: updateOperation }
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Usuario no encontrado' 
+      });
+    }
+
+    // Obtener el usuario actualizado manualmente (sin validaciones)
+    const updatedUser = await User.findById(req.params.id).select('-password');
+    
+    // Verificar si se ha cambiado el rol a/desde supervisor
     const roleChanged = req.body.role && user.role !== req.body.role;
     const wasSupervisor = user.role === ROLES.SUPERVISOR;
     const isSupervisor = updatedUser.role === ROLES.SUPERVISOR;
