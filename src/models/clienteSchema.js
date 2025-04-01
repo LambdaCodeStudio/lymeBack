@@ -26,11 +26,11 @@ const subServicioSchema = new mongoose.Schema({
     default: ''
   },
   // Nuevo campo para asignar supervisor al subservicio
-  supervisorId: {
+  supervisorId: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     index: true // Añadimos índice para mejorar rendimiento de búsquedas
-  },
+  }],
   // Lista de sububicaciones asociadas a este subservicio
   subUbicaciones: [subUbicacionSchema]
 });
