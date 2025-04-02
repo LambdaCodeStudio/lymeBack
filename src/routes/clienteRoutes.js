@@ -57,4 +57,21 @@ router.delete('/:clienteId/subservicio/:subServicioId/sububicacion/:subUbicacion
     [validateObjectId('clienteId'), validateObjectId('subServicioId'), validateObjectId('subUbicacionId')], 
     clienteController.deleteSubUbicacion);
 
+// Rutas para asignación de operarios a subservicios
+router.post('/:clienteId/subservicio/:subServicioId/operario', 
+    [validateObjectId('clienteId'), validateObjectId('subServicioId')], 
+    clienteController.assignOperarioToSubServicio);
+
+router.delete('/:clienteId/subservicio/:subServicioId/operario/:operarioId', 
+    [validateObjectId('clienteId'), validateObjectId('subServicioId'), validateObjectId('operarioId')], 
+    clienteController.removeOperarioFromSubServicio);
+
+// Rutas para obtener subservicios por operario
+router.get('/subservicios/operario/:operarioId', 
+    validateObjectId('operarioId'), 
+    clienteController.getSubServiciosByOperarioId);
+
+// Ruta para que el operario obtenga sus subservicios asignados
+router.get('/mis-subservicios', clienteController.getMySubServicios);
+
 module.exports = router;

@@ -617,3 +617,129 @@ exports.getClientesEstructurados = async (req, res) => {
         res.status(500).json({ mensaje: 'Error al obtener clientes estructurados', error: error.message });
     }
 };
+
+
+
+// Asignar operario a un subservicio
+exports.assignOperarioToSubServicio = async (req, res) => {
+    try {
+        // Validar los IDs
+        if (!mongoose.Types.ObjectId.isValid(req.params.clienteId)) {
+            return res.status(400).json({ mensaje: 'ID de cliente inválido' });
+        }
+        
+        if (!mongoose.Types.ObjectId.isValid(req.params.subServicioId)) {
+            return res.status(400).json({ mensaje: 'ID de subservicio inválido' });
+        }
+        
+        if (!mongoose.Types.ObjectId.isValid(req.body.operarioId)) {
+            return res.status(400).json({ mensaje: 'ID de operario inválido' });
+        }
+        
+        // Verificar que el operario exista y sea un operario
+        const operario = await User.findOne({
+            _id: req.body.operarioId,
+            role: 'operario',
+            isActive: true
+        });
+        
+        if (!operario) {
+            return res.status(404).json({ mensaje: 'Operario no encontrado o inactivo' });
+        }
+        
+        const clienteActualizado = await clienteLogic.asignarOperarioSubServicio(
+            req.params.clienteId,
+            req.params.subServicioId,
+            req.body.operarioId
+        );
+        
+        if (!clienteActualizado) {
+            return res.status(404).json({ mensaje: 'Cliente o subservicio no encontrado' });
+        }
+        
+        res.json(clienteActualizado);
+    } catch (error) {
+        console.error('Error al asignar operario a subservicio:', error);
+        res.status(500).json({ mensaje: 'Error al asignar operario', error: error.message });
+    }
+};
+
+// Remover operario de un subservicio
+exports.removeOperarioFromSubServicio = async (req, res) => {
+    try {
+        // Validar los IDs
+        if (!mongoose.Types.ObjectId.isValid(req.params.clienteId)) {
+            return res.status(400).json({ mensaje: 'ID de cliente inválido' });
+        }
+        
+        if (!mongoose.Types.ObjectId.isValid(req.params.subServicioId)) {
+            return res.status(400).json({ mensaje: 'ID de subservicio inválido' });
+        }
+        
+        if (!mongoose.Types.ObjectId.isValid(req.params.operarioId)) {
+            return res.status(400).json({ mensaje: 'ID de operario inválido' });
+        }
+        
+        const cliente = await clienteLogic.removerOperarioSubServicio(
+            req.params.clienteId,
+            req.params.subServicioId,
+            req.params.operarioId
+        );
+        
+        if (!cliente) {
+            return res.status(404).json({ mensaje: 'Cliente o subservicio no encontrado' });
+        }
+        
+        res.json(cliente);
+    } catch (error) {
+        console.error('Error al remover operario de subservicio:', error);
+        res.status(500).json({ mensaje: 'Error al remover operario', error: error.message });
+    }
+};
+
+// Obtener subServicios asignados a un operario
+exports.getSubServiciosByOperarioId = async (req, res) => {
+    try {
+        // Validar que el ID de operario sea un ObjectId válido
+        const operarioId = req.params.operarioId;
+        if (!mongoose.Types.ObjectId.isValid(operarioId)) {
+            return res.status(400).json({ mensaje: 'ID de operario inválido' });
+        }
+
+        const subServicios = await clienteLogic.obtenerSubServiciosPorOperarioId(operarioId);
+        res.json(subServicios);
+    } catch (error) {
+        console.error('Error al obtener subservicios por operarioId:', error);
+        res.status(500).json({ 
+            mensaje: 'Error al obtener subservicios por operario', 
+            error: error.message,
+            stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        });
+    }
+};
+
+// NUEVO ENDPOINT: Obtener subServicios asignados al operario actual
+exports.getMySubServicios = async (req, res) => {
+    try {
+        const operarioId = req.user.id;
+        
+        // Verificar que sea un operario
+        const operario = await User.findById(operarioId);
+        if (!operario || operario.role !== 'operario') {
+            return res.status(403).json({
+                success: false,
+                message: 'Solo los operarios pueden acceder a esta función'
+            });
+        }
+        
+        const subServicios = await clienteLogic.obtenerSubServiciosPorOperarioId(operarioId);
+        res.json(subServicios);
+    } catch (error) {
+        console.error('Error al obtener subservicios del operario:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error al obtener subservicios',
+            error: error.message
+        });
+    }
+};

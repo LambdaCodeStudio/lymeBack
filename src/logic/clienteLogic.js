@@ -169,30 +169,6 @@ const eliminarSubUbicacion = async (clienteId, subServicioId, subUbicacionId) =>
     return await cliente.save();
 };
 
-// NUEVA FUNCIÓN: Asignar supervisor a un subservicio
-const asignarSupervisorSubServicio = async (clienteId, subServicioId, supervisorId) => {
-    // Obtener cliente
-    const cliente = await Cliente.findById(clienteId);
-    if (!cliente) return null;
-    
-    // Obtener subservicio
-    const subServicio = cliente.subServicios.id(subServicioId);
-    if (!subServicio) return null;
-    
-    // Verificar si el supervisor está en la lista de supervisores del cliente
-    const supervisorIds = cliente.userId.map(id => 
-        typeof id === 'object' && id !== null ? id._id.toString() : id.toString()
-    );
-    
-    if (!supervisorIds.includes(supervisorId)) {
-        throw new Error('El supervisor seleccionado no está asignado a este cliente');
-    }
-    
-    // Asignar el supervisor al subservicio
-    subServicio.supervisorId = supervisorId;
-    
-    return await cliente.save();
-};
 
 // NUEVA FUNCIÓN: Remover supervisor de un subservicio
 const removerSupervisorSubServicio = async (clienteId, subServicioId) => {
@@ -272,6 +248,96 @@ const obtenerClientesEstructurados = async () => {
     ]);
 };
 
+
+// Asignar operario a un subservicio
+const asignarOperarioSubServicio = async (clienteId, subServicioId, operarioId) => {
+    const cliente = await Cliente.findById(clienteId);
+    if (!cliente) return null;
+    
+    const subServicio = cliente.subServicios.id(subServicioId);
+    if (!subServicio) return null;
+    
+    // Verificar si el operario ya está asignado
+    if (!subServicio.operarios) {
+        subServicio.operarios = [];
+    }
+    
+    if (!subServicio.operarios.includes(operarioId)) {
+        subServicio.operarios.push(operarioId);
+    }
+    
+    return await cliente.save();
+};
+
+// Remover operario de un subservicio
+const removerOperarioSubServicio = async (clienteId, subServicioId, operarioId) => {
+    const cliente = await Cliente.findById(clienteId);
+    if (!cliente) return null;
+    
+    const subServicio = cliente.subServicios.id(subServicioId);
+    if (!subServicio) return null;
+    
+    if (subServicio.operarios && subServicio.operarios.length > 0) {
+        subServicio.operarios = subServicio.operarios.filter(
+            op => op.toString() !== operarioId.toString()
+        );
+    }
+    
+    return await cliente.save();
+};
+
+// Obtener subServicios asignados a un operario
+const obtenerSubServiciosPorOperarioId = async (operarioId) => {
+    const clientes = await Cliente.find({ 'subServicios.operarios': operarioId })
+        .populate('userId', 'nombre email usuario apellido role isActive')
+        .populate('subServicios.supervisores', 'nombre email usuario apellido role isActive')
+        .populate('subServicios.operarios', 'nombre email usuario apellido role isActive');
+    
+    const subServiciosDelOperario = [];
+    
+    clientes.forEach(cliente => {
+        const subServiciosFiltrados = cliente.subServicios.filter(
+            subServ => subServ.operarios && 
+            subServ.operarios.some(op => op._id.toString() === operarioId.toString())
+        );
+        
+        if (subServiciosFiltrados.length > 0) {
+            subServiciosDelOperario.push({
+                clienteId: cliente._id,
+                nombreCliente: cliente.nombre,
+                userId: cliente.userId,
+                subServicios: subServiciosFiltrados
+            });
+        }
+    });
+    
+    return subServiciosDelOperario;
+};
+
+// Modificar la función existente para usar el nuevo campo supervisores
+const asignarSupervisorSubServicio = async (clienteId, subServicioId, supervisorId) => {
+    const cliente = await Cliente.findById(clienteId);
+    if (!cliente) return null;
+    
+    const subServicio = cliente.subServicios.id(subServicioId);
+    if (!subServicio) return null;
+    
+    // Inicializar array si no existe
+    if (!subServicio.supervisores) {
+        subServicio.supervisores = [];
+    }
+    
+    // Verificar si ya está asignado
+    if (!subServicio.supervisores.includes(supervisorId)) {
+        subServicio.supervisores.push(supervisorId);
+    }
+    
+    // Para compatibilidad, mantener también el campo supervisorId
+    subServicio.supervisorId = supervisorId;
+    
+    return await cliente.save();
+};
+
 module.exports = {
     obtenerClientes,
     obtenerClientePorId,
@@ -291,5 +357,8 @@ module.exports = {
     obtenerClientesEstructurados,
     asignarSupervisorSubServicio,
     removerSupervisorSubServicio,
-    obtenerSubServiciosSinSupervisor
+    obtenerSubServiciosSinSupervisor,
+    asignarOperarioSubServicio,
+    removerOperarioSubServicio,
+    obtenerSubServiciosPorOperarioId
 };
