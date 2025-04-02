@@ -74,6 +74,7 @@ const obtenerSubServiciosPorSupervisorId = async (supervisorId) => {
     return subServiciosDelSupervisor;
 };
 
+
 // Obtener clientes sin asignar (sin userId o con usuario inactivo)
 const obtenerClientesSinAsignar = async (idsUsuariosInactivos) => {
     // Obtener clientes sin userId
@@ -184,11 +185,18 @@ const removerSupervisorSubServicio = async (clienteId, subServicioId) => {
     return await cliente.save();
 };
 
-// NUEVA FUNCIÓN: Obtener todos los subservicios sin supervisor asignado
 const obtenerSubServiciosSinSupervisor = async () => {
     // Encontrar clientes con subservicios sin supervisor asignado
     const clientes = await Cliente.find({ 
-        'subServicios': { $elemMatch: { supervisorId: { $exists: false } } } 
+        'subServicios': { 
+            $elemMatch: { 
+                $or: [
+                    { supervisorId: { $exists: false } },
+                    { supervisorId: { $size: 0 } },
+                    { supervisorId: null }
+                ] 
+            } 
+        } 
     }).populate('userId', 'nombre email usuario apellido role isActive');
     
     // Extraer solo los subservicios sin supervisor
@@ -196,7 +204,7 @@ const obtenerSubServiciosSinSupervisor = async () => {
     
     clientes.forEach(cliente => {
         const subServiciosSinSupervisor = cliente.subServicios.filter(
-            subServ => !subServ.supervisorId
+            subServ => !subServ.supervisorId || (Array.isArray(subServ.supervisorId) && subServ.supervisorId.length === 0)
         );
         
         if (subServiciosSinSupervisor.length > 0) {
@@ -290,7 +298,7 @@ const removerOperarioSubServicio = async (clienteId, subServicioId, operarioId) 
 const obtenerSubServiciosPorOperarioId = async (operarioId) => {
     const clientes = await Cliente.find({ 'subServicios.operarios': operarioId })
         .populate('userId', 'nombre email usuario apellido role isActive')
-        .populate('subServicios.supervisores', 'nombre email usuario apellido role isActive')
+        .populate('subServicios.supervisorId', 'nombre email usuario apellido role isActive')
         .populate('subServicios.operarios', 'nombre email usuario apellido role isActive');
     
     const subServiciosDelOperario = [];
@@ -338,6 +346,20 @@ const asignarSupervisorSubServicio = async (clienteId, subServicioId, supervisor
     return await cliente.save();
 };
 
+
+const asignarSupervisoresSubServicio = async (clienteId, subServicioId, supervisorIds) => {
+    const cliente = await Cliente.findById(clienteId);
+    if (!cliente) return null;
+    
+    const subServicio = cliente.subServicios.id(subServicioId);
+    if (!subServicio) return null;
+    
+    // Asignar los supervisores al subservicio
+    subServicio.supervisorId = supervisorIds;
+    
+    return await cliente.save();
+};
+
 module.exports = {
     obtenerClientes,
     obtenerClientePorId,
@@ -360,5 +382,6 @@ module.exports = {
     obtenerSubServiciosSinSupervisor,
     asignarOperarioSubServicio,
     removerOperarioSubServicio,
-    obtenerSubServiciosPorOperarioId
+    obtenerSubServiciosPorOperarioId,
+    asignarSupervisoresSubServicio
 };
