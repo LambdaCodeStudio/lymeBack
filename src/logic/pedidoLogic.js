@@ -68,7 +68,7 @@ const obtenerPedidosPorSupervisorId = async (supervisorId, opciones = {}) => {
     // Primero encontrar todos los subServicios donde este usuario es supervisor
     const Cliente = mongoose.model('Cliente');
     const clientesDelSupervisor = await Cliente.find({ 
-        'subServicios.supervisorId': mongoose.Types.ObjectId(supervisorId) 
+        'subServicios.supervisorId': new mongoose.Types.ObjectId(supervisorId) 
     }).select('_id subServicios');
     
     // Extraer los IDs de subServicios donde este usuario es supervisor
@@ -88,7 +88,7 @@ const obtenerPedidosPorSupervisorId = async (supervisorId, opciones = {}) => {
     // 2. El pedido tiene un subServicio donde el usuario es supervisor
     return await Pedido.find({
         $or: [
-            { supervisorId: mongoose.Types.ObjectId(supervisorId) },
+            { supervisorId: new mongoose.Types.ObjectId(supervisorId) },
             { 'cliente.subServicioId': { $in: subServiciosIds } }
         ]
     })
@@ -280,10 +280,29 @@ const obtenerPedidosOrdenados = async (opciones = {}) => {
  * Crea un nuevo pedido y actualiza el stock de productos
  */
 const crearPedido = async (data) => {
-    // Creamos el pedido primero
-    const nuevoPedido = new Pedido(data);
-    
     try {
+        // Verificar si el usuario que hace el pedido es un operario
+        if (data.userId) {
+            const User = mongoose.model('User');
+            const usuario = await User.findById(data.userId);
+            
+            // Si es un operario y tiene supervisor asignado, usar el ID del supervisor
+            if (usuario && usuario.role === 'operario' && usuario.supervisorId) {
+                // Guardamos el ID original del operario para referencia
+                data.operarioId = data.userId;
+                // Reemplazamos con el ID del supervisor
+                data.userId = usuario.supervisorId;
+                // También establecemos explícitamente el supervisorId
+                data.supervisorId = usuario.supervisorId;
+                // Añadimos una nota indicando que el pedido fue hecho por un operario
+                data.notas = (data.notas ? data.notas + '\n' : '') + 
+                    `Pedido realizado por el operario ${usuario.nombre || ''} ${usuario.apellido || ''} (ID: ${usuario._id}).`;
+            }
+        }
+        
+        // Creamos el pedido con los datos potencialmente modificados
+        const nuevoPedido = new Pedido(data);
+        
         // Reducimos el stock de cada producto
         for (const item of data.productos) {
             const { productoId, cantidad } = item;

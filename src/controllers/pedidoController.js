@@ -102,60 +102,14 @@ exports.getPedidosBySupervisorId = async (req, res) => {
             sort: { fecha: -1 }
         };
 
-        // Obtener pedidos por supervisorId (directamente asignado o a través de subServicio)
-        const pedidos = await Pedido.find({
-            $or: [
-                { supervisorId: req.params.supervisorId },
-                { 'cliente.subServicioId': { $exists: true } }
-            ]
-        })
-        .populate('userId', 'nombre email usuario apellido')
-        .populate('supervisorId', 'nombre email usuario apellido')
-        .populate('productos.productoId')
-        .populate('cliente.clienteId', 'nombre')
-        .populate({
-            path: 'cliente.clienteId',
-            select: 'nombre subServicios',
-            populate: {
-                path: 'subServicios',
-                populate: { path: 'supervisorId' }
-            }
-        })
-        .sort(opciones.sort)
-        .skip(opciones.skip)
-        .limit(opciones.limit);
+        // MODIFICACIÓN: Usar la función ya implementada en pedidoLogic.js
+        // que obtiene correctamente los pedidos asignados al supervisor
+        const pedidos = await pedidoLogic.obtenerPedidosPorSupervisorId(
+            req.params.supervisorId, 
+            opciones
+        );
         
-        // Filtrar manualmente los pedidos que tienen el supervisor asignado a nivel de subServicio
-        const pedidosFiltrados = pedidos.filter(pedido => {
-            // Si el supervisorId coincide directamente, incluir
-            if (pedido.supervisorId && 
-                pedido.supervisorId._id.toString() === req.params.supervisorId) {
-                return true;
-            }
-            
-            // Si hay cliente y subServicioId, verificar si el subServicio tiene asignado este supervisor
-            if (pedido.cliente && 
-                pedido.cliente.clienteId && 
-                pedido.cliente.subServicioId) {
-                
-                const cliente = pedido.cliente.clienteId;
-                if (!cliente.subServicios) return false;
-                
-                // Buscar el subServicio correspondiente
-                const subServicio = cliente.subServicios.find(sub => 
-                    sub._id.toString() === pedido.cliente.subServicioId.toString()
-                );
-                
-                // Verificar si el subServicio tiene asignado el supervisor
-                return subServicio && 
-                       subServicio.supervisorId && 
-                       subServicio.supervisorId.toString() === req.params.supervisorId;
-            }
-            
-            return false;
-        });
-        
-        res.json(pedidosFiltrados);
+        res.json(pedidos);
     } catch (error) {
         console.error('Error al obtener pedidos por supervisorId:', error);
         res.status(500).json({ 
@@ -391,7 +345,34 @@ exports.createPedido = async (req, res) => {
 
         // Agregar userId desde el token de autenticación si está disponible
         if (req.user && req.user.id && !req.body.userId) {
-            req.body.userId = req.user.id;
+            // Si es un operario, obtener su supervisor asignado y usar ese ID
+            if (req.user.role === 'operario' && req.user.supervisorId) {
+                // Usar el ID del supervisor como userId del pedido
+                req.body.userId = req.user.supervisorId;
+                
+                // Guardar info del operario en metadata para mantener trazabilidad
+                req.body.metadata = {
+                    creadoPorOperario: true,
+                    operarioId: req.user.id,
+                    operarioNombre: req.user.nombre || req.user.usuario || req.user.email,
+                    fechaCreacion: new Date().toISOString(),
+                    supervisorId: req.user.supervisorId
+                };
+                
+                // Intentar obtener información adicional del supervisor
+                try {
+                    const User = mongoose.model('User');
+                    const supervisor = await User.findById(req.user.supervisorId);
+                    if (supervisor) {
+                        req.body.metadata.supervisorNombre = supervisor.nombre || supervisor.usuario || supervisor.email;
+                    }
+                } catch (err) {
+                    console.error('Error al obtener información del supervisor:', err);
+                }
+            } else {
+                // Si no es operario o no tiene supervisor, usar el ID del usuario actual
+                req.body.userId = req.user.id;
+            }
         }
         
         // Si no hay supervisorId pero hay un subServicioId, intentar obtener el supervisor del subServicio
@@ -419,52 +400,16 @@ exports.createPedido = async (req, res) => {
             }
         }
 
-        // Si es un operario creando un pedido para otro usuario
-        if (req.user && req.user.id && req.user.role === 'operario' && req.body.userId && req.user.id !== req.body.userId) {
-            // Configurar los metadatos del pedido
-            req.body.metadata = {
-                creadoPorOperario: true,
-                operarioId: req.user.id,
-                operarioNombre: req.user.nombre || req.user.usuario || req.user.email,
-                fechaCreacion: new Date().toISOString()
-            };
-            
-            // Si hay supervisor asignado, incluirlo en los metadatos
-            if (req.body.supervisorId) {
-                try {
-                    const User = mongoose.model('User');
-                    const supervisor = await User.findById(req.body.supervisorId);
-                    if (supervisor) {
-                        req.body.metadata.supervisorId = supervisor._id;
-                        req.body.metadata.supervisorNombre = supervisor.nombre || supervisor.usuario || supervisor.email;
-                    }
-                } catch (err) {
-                    console.error('Error al obtener información del supervisor:', err);
-                }
-            }
-        }
+        // El código para operarios creando pedidos para otros usuarios ya no es necesario aquí
+        // ya que el userId siempre será el supervisor cuando un operario crea un pedido
         
-        // Si es un pedido creado por un operario para sí mismo, pero quiere marcar explícitamente
-        if (req.user && req.user.role === 'operario' && req.body.creadoPorOperario) {
-            req.body.metadata = {
-                creadoPorOperario: true,
-                operarioId: req.user.id,
-                operarioNombre: req.user.nombre || req.user.usuario || req.user.email,
-                fechaCreacion: new Date().toISOString()
-            };
-            
-            // Incluir supervisor en los metadatos si está disponible
-            if (req.body.supervisorId) {
-                try {
-                    const User = mongoose.model('User');
-                    const supervisor = await User.findById(req.body.supervisorId);
-                    if (supervisor) {
-                        req.body.metadata.supervisorId = supervisor._id;
-                        req.body.metadata.supervisorNombre = supervisor.nombre || supervisor.usuario || supervisor.email;
-                    }
-                } catch (err) {
-                    console.error('Error al obtener información del supervisor:', err);
-                }
+        // Para casos especiales donde se quiere forzar a mantener el userId original
+        if (req.user && req.body.mantenerUsuarioOriginal === true) {
+            // Mantener el userId tal como está, pero incluir metadatos
+            if (!req.body.metadata) {
+                req.body.metadata = {
+                    fechaCreacion: new Date().toISOString()
+                };
             }
         }
 

@@ -80,6 +80,12 @@ const pedidoSchema = new mongoose.Schema({
         required: true,
         index: true // Índice para filtrar por operario
     },
+    // Operario original que creó el pedido (si se asignó a un supervisor)
+    operarioId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        index: true // Índice para filtrar por operario original
+    },
     // Supervisor asignado al pedido
     // NOTA: Ahora se puede obtener del subServicioId si existe, pero mantenemos para compatibilidad
     supervisorId: {

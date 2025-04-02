@@ -47,20 +47,22 @@ const obtenerClientesPorSupervisorId = async (supervisorId) => {
     console.log(`Buscando clientes para supervisor con ID: ${supervisorIdStr}`);
     
     try {
-        // Consulta más robusta para encontrar todos los clientes con subServicios
+        // MODIFICACIÓN: Consulta optimizada que filtra directamente por supervisorId
         const clientes = await Cliente.find({
-            'subServicios': { $exists: true, $ne: [] }
+            'subServicios.supervisorId': { $elemMatch: { $eq: new mongoose.Types.ObjectId(supervisorIdStr) } }
         })
         .populate('userId', 'nombre email usuario apellido role isActive')
         .populate('subServicios.supervisorId', 'nombre email usuario apellido role isActive');
         
-        // Filtrar manualmente los clientes y sus subservicios
-        const clientesFiltrados = clientes.filter(cliente => {
+        // Filtrar los subservicios de cada cliente para mostrar solo los asignados a este supervisor
+        const clientesFiltrados = clientes.map(cliente => {
+            const clienteObj = cliente.toObject ? cliente.toObject() : { ...cliente };
+            
             // Filtrar solo los subservicios donde este supervisor está asignado
-            const subServiciosFiltrados = cliente.subServicios.filter(subServ => {
+            clienteObj.subServicios = cliente.subServicios.filter(subServ => {
                 if (!subServ.supervisorId) return false;
                 
-                // Si supervisorId es un array
+                // Si supervisorId es un array (que debería ser siempre el caso según tu aclaración)
                 if (Array.isArray(subServ.supervisorId)) {
                     return subServ.supervisorId.some(id => {
                         if (typeof id === 'object' && id !== null) {
@@ -69,29 +71,27 @@ const obtenerClientesPorSupervisorId = async (supervisorId) => {
                         return id.toString() === supervisorIdStr;
                     });
                 }
-                // Si supervisorId es un objeto
+                // Por compatibilidad, mantener este caso (aunque no debería ocurrir)
                 else if (typeof subServ.supervisorId === 'object' && subServ.supervisorId !== null) {
                     return subServ.supervisorId._id.toString() === supervisorIdStr;
                 }
-                // Si supervisorId es directamente un string ID
+                // Por compatibilidad, mantener este caso (aunque no debería ocurrir)
                 else {
                     return subServ.supervisorId.toString() === supervisorIdStr;
                 }
             });
             
-            // Solo incluir este cliente si tiene al menos un subservicio asignado a este supervisor
-            if (subServiciosFiltrados.length > 0) {
-                // Crear una copia modificada del cliente con solo los subservicios relevantes
-                const clienteObj = cliente.toObject ? cliente.toObject() : { ...cliente };
-                clienteObj.subServicios = subServiciosFiltrados;
-                return true;
-            }
-            return false;
+            return clienteObj;
         });
         
-        console.log(`Encontrados ${clientesFiltrados.length} clientes con subservicios asignados al supervisor ${supervisorIdStr}`);
+        // Filtrar clientes que quedaron sin subservicios después del filtrado
+        const clientesConSubservicios = clientesFiltrados.filter(cliente => 
+            cliente.subServicios && cliente.subServicios.length > 0
+        );
         
-        return clientesFiltrados;
+        console.log(`Encontrados ${clientesConSubservicios.length} clientes con subservicios asignados al supervisor ${supervisorIdStr}`);
+        
+        return clientesConSubservicios;
     } catch (error) {
         console.error(`Error al obtener clientes por supervisorId ${supervisorIdStr}:`, error);
         throw error;
@@ -353,64 +353,71 @@ const obtenerSubServiciosPorOperarioId = async (operarioId) => {
     
     console.log(`Buscando subservicios para operario con ID: ${operarioIdStr}`);
     
-    // Buscar clientes con subservicios (sin filtrar por operario aún)
-    const clientes = await Cliente.find({ 
-        'subServicios': { $exists: true, $ne: [] }
-    })
-    .populate('userId', 'nombre email usuario apellido role isActive')
-    .populate('subServicios.supervisorId', 'nombre email usuario apellido role isActive')
-    .populate('subServicios.operarios', 'nombre email usuario apellido role isActive');
-    
-    console.log(`Encontrados ${clientes.length} clientes con subservicios para revisar`);
-    
-    const subServiciosDelOperario = [];
-    
-    clientes.forEach(cliente => {
-        // Filtrar subservicios donde el operario esté asignado
-        const subServiciosFiltrados = cliente.subServicios.filter(subServ => {
-            // Si no hay operarios asignados, no incluir
-            if (!subServ.operarios) return false;
-            
-            // Convertir a array si no lo es
-            const operariosArray = Array.isArray(subServ.operarios) ? subServ.operarios : [subServ.operarios];
-            
-            // Si el array está vacío, no incluir
-            if (operariosArray.length === 0) return false;
-            
-            // Comprobar cada operario en el array
-            return operariosArray.some(op => {
-                // Si el operario es un objeto con _id
-                if (op && typeof op === 'object' && op._id) {
-                    return op._id.toString() === operarioIdStr;
-                }
-                // Si el operario es directamente un string ID
-                else if (op) {
-                    return op.toString() === operarioIdStr;
-                }
-                return false;
+    try {
+        // MODIFICACIÓN: Consulta optimizada que filtra directamente por operarioId
+        // Usar new con el constructor ObjectId
+        const operarioObjectId = new mongoose.Types.ObjectId(operarioIdStr);
+        
+        const clientes = await Cliente.find({ 
+            'subServicios.operarios': operarioObjectId
+        })
+        .populate('userId', 'nombre email usuario apellido role isActive')
+        .populate('subServicios.supervisorId', 'nombre email usuario apellido role isActive')
+        .populate('subServicios.operarios', 'nombre email usuario apellido role isActive');
+        
+        console.log(`Encontrados ${clientes.length} clientes con subservicios asignados al operario`);
+        
+        const subServiciosDelOperario = [];
+        
+        clientes.forEach(cliente => {
+            // Filtrar exactamente los subservicios donde el operario está asignado
+            const subServiciosFiltrados = cliente.subServicios.filter(subServ => {
+                if (!subServ.operarios) return false;
+                
+                // Convertir a array si no lo es
+                const operariosArray = Array.isArray(subServ.operarios) ? subServ.operarios : [subServ.operarios];
+                
+                // Si el array está vacío, no incluir
+                if (operariosArray.length === 0) return false;
+                
+                // Comprobar cada operario en el array
+                return operariosArray.some(op => {
+                    // Si el operario es un objeto con _id
+                    if (op && typeof op === 'object' && op._id) {
+                        return op._id.toString() === operarioIdStr;
+                    }
+                    // Si el operario es directamente un string ID
+                    else if (op) {
+                        return op.toString() === operarioIdStr;
+                    }
+                    return false;
+                });
             });
+            
+            if (subServiciosFiltrados.length > 0) {
+                // Marcar los subservicios como seleccionados para la UI
+                const subServiciosConSeleccion = subServiciosFiltrados.map(subServ => {
+                    const subServObj = subServ.toObject ? subServ.toObject() : { ...subServ };
+                    subServObj.isSelected = true;
+                    return subServObj;
+                });
+                
+                subServiciosDelOperario.push({
+                    clienteId: cliente._id,
+                    nombreCliente: cliente.nombre,
+                    userId: cliente.userId,
+                    subServicios: subServiciosConSeleccion
+                });
+            }
         });
         
-        if (subServiciosFiltrados.length > 0) {
-            // Marcar los subservicios como seleccionados para la UI
-            const subServiciosConSeleccion = subServiciosFiltrados.map(subServ => {
-                const subServObj = subServ.toObject ? subServ.toObject() : { ...subServ };
-                subServObj.isSelected = true;
-                return subServObj;
-            });
-            
-            subServiciosDelOperario.push({
-                clienteId: cliente._id,
-                nombreCliente: cliente.nombre,
-                userId: cliente.userId,
-                subServicios: subServiciosConSeleccion
-            });
-        }
-    });
-    
-    console.log(`Encontrados ${subServiciosDelOperario.length} clientes con subservicios asignados al operario ${operarioIdStr}`);
-    
-    return subServiciosDelOperario;
+        console.log(`Procesados ${subServiciosDelOperario.length} clientes con subservicios asignados al operario ${operarioIdStr}`);
+        
+        return subServiciosDelOperario;
+    } catch (error) {
+        console.error(`Error al obtener subservicios por operarioId ${operarioIdStr}:`, error);
+        throw error;
+    }
 };
 
 // Modificar la función existente para usar el nuevo campo supervisores
