@@ -7,7 +7,7 @@ const mongoose = require('mongoose');
 /**
  * Genera un PDF de remito con paginación automática sin mostrar precios
  * @param {Object} pedidoData - Datos del pedido
- * @param {Object} clienteData - Datos del cliente
+ * @param {Object} clienteData - Datos del cliente (opcional)
  * @param {Array} productos - Lista de productos
  * @returns {Promise<Buffer>} - Buffer del PDF generado
  */
@@ -22,7 +22,6 @@ const generarRemitoPDF = async (pedidoData, clienteData, productos) => {
       }
       
       console.log('Datos de pedido recibidos:', JSON.stringify(pedidoData));
-      console.log('Datos de cliente recibidos:', JSON.stringify(clienteData));
       console.log('Cantidad de productos:', productos ? productos.length : 0);
       
       if (!Array.isArray(productos)) {
@@ -142,46 +141,60 @@ const generarRemitoPDF = async (pedidoData, clienteData, productos) => {
               console.error('Error al agregar logo:', logoError);
             }
             
-            // Título del documento centrado
-            doc.fontSize(24).font('Helvetica-Bold').text('Lyme S.A', 50, 50, { align: 'center' });
-            doc.fontSize(20).font('Helvetica-Bold').text('REMITO', { align: 'center' });
+            // No agregamos texto de título ya que el logo es suficiente
             doc.moveDown();
             doc.fontSize(12).font('Helvetica');
           };
 
-          // Función para agregar información del cliente y pedido (solo primera página)
-          const agregarInfoClientePedido = () => {
-            // Información del cliente con un recuadro
-            doc.roundedRect(50, 120, 225, 70, 5).stroke();
-            doc.fontSize(10).font('Helvetica-Bold').text('DATOS DEL CLIENTE:', 60, 130);
-            doc.font('Helvetica');
+          // Función para agregar información del pedido incluyendo cliente, subservicio y sububicación
+          const agregarInfoPedido = () => {
+            const y = 120; // Posición Y inicial
+            let currentY = y;
             
-            const nombre = clienteData?.nombre || 'Sin nombre';
-            const direccion = clienteData?.direccion || '';
-            const email = clienteData?.email || '';
+            // Cliente - Acceder correctamente a la estructura
+            doc.fontSize(10).font('Helvetica-Bold').text('Cliente:', 50, currentY);
             
-            // Ajustar el texto para que no se salga del recuadro
-            const anchoDisponible = 205; // 225 - 20 (margen)
+            // Primero intentamos acceder a cliente.nombreCliente (estructura nueva)
+            if (pedidoData.cliente && pedidoData.cliente.nombreCliente) {
+              doc.font('Helvetica').text(pedidoData.cliente.nombreCliente, 120, currentY, { width: 400, ellipsis: true });
+            } 
+            // Si no está disponible, usamos el campo servicio (estructura antigua)
+            else if (pedidoData.servicio) {
+              // Manejar si servicio es un array o string
+              const servicioText = Array.isArray(pedidoData.servicio) 
+                ? pedidoData.servicio.join(', ') 
+                : pedidoData.servicio;
+              doc.font('Helvetica').text(servicioText || 'No especificado', 120, currentY, { width: 400, ellipsis: true });
+            } else {
+              doc.font('Helvetica').text('No especificado', 120, currentY, { width: 400 });
+            }
+            currentY += 20;
             
-            doc.text(nombre, 60, 150, { width: anchoDisponible });
-            doc.text(direccion, 60, 170, { width: anchoDisponible, ellipsis: true });
+            // Agregar subservicio si está disponible
+            if (pedidoData.cliente && pedidoData.cliente.nombreSubServicio) {
+              doc.fontSize(10).font('Helvetica-Bold').text('Subservicio:', 50, currentY);
+              doc.font('Helvetica').text(pedidoData.cliente.nombreSubServicio, 120, currentY, { width: 400, ellipsis: true });
+              currentY += 20;
+            } 
+            // Si no, intentar usar seccionDelServicio
+            else if (pedidoData.seccionDelServicio && pedidoData.seccionDelServicio.trim() !== '') {
+              doc.fontSize(10).font('Helvetica-Bold').text('Subservicio:', 50, currentY);
+              doc.font('Helvetica').text(pedidoData.seccionDelServicio, 120, currentY, { width: 400, ellipsis: true });
+              currentY += 20;
+            }
             
-            // Dirección de facturación con un recuadro
-            doc.roundedRect(300, 120, 225, 70, 5).stroke();
-            doc.fontSize(10).font('Helvetica-Bold').text('DIRECCIÓN DE FACTURACIÓN:', 310, 130);
-            doc.font('Helvetica');
-            doc.text(nombre, 310, 150, { width: 205, ellipsis: true });
-            doc.text(direccion, 310, 170, { width: 205, ellipsis: true });
-
-            // Servicios, número de pedido y fecha - Fuera de los recuadros
-            const y = 200; // Posición Y debajo de los recuadros
+            // Agregar sububicación si está disponible
+            if (pedidoData.cliente && pedidoData.cliente.nombreSubUbicacion) {
+              doc.fontSize(10).font('Helvetica-Bold').text('Ubicación:', 50, currentY);
+              doc.font('Helvetica').text(pedidoData.cliente.nombreSubUbicacion, 120, currentY, { width: 400, ellipsis: true });
+              currentY += 20;
+            }
             
-            doc.fontSize(10).font('Helvetica-Bold').text('Servicio:', 300, y);
-            doc.font('Helvetica').text(pedidoData.servicio || '', 350, y, { width: 170, ellipsis: true });
-            
+            // Número de pedido
             const numeroPedido = pedidoData.numero || pedidoData.nPedido || '';
-            doc.fontSize(10).font('Helvetica-Bold').text('Número de pedido:', 300, y + 20);
-            doc.font('Helvetica').text(numeroPedido, 400, y + 20, { width: 100 });
+            doc.fontSize(10).font('Helvetica-Bold').text('Número de pedido:', 50, currentY);
+            doc.font('Helvetica').text(numeroPedido, 150, currentY, { width: 100 });
+            currentY += 20;
             
             // Formatear fecha
             let fechaFormateada = 'Sin fecha';
@@ -197,10 +210,12 @@ const generarRemitoPDF = async (pedidoData, clienteData, productos) => {
               console.error('Error al formatear fecha:', fechaError);
             }
             
-            doc.fontSize(10).font('Helvetica-Bold').text('Fecha de pedido:', 300, y + 40);
-            doc.font('Helvetica').text(fechaFormateada, 400, y + 40, { width: 140 });
+            // Fecha de pedido
+            doc.fontSize(10).font('Helvetica-Bold').text('Fecha de pedido:', 50, currentY);
+            doc.font('Helvetica').text(fechaFormateada, 150, currentY, { width: 140 });
+            currentY += 30;
             
-            return y + 60; // Devolver la posición Y después de toda la información
+            return currentY; // Devolver la posición Y actualizada después de toda la información
           };
 
           // Función para agregar la cabecera de la tabla de productos
@@ -224,9 +239,9 @@ const generarRemitoPDF = async (pedidoData, clienteData, productos) => {
 
           // Función principal para dibujar todo el PDF
           const dibujarPDF = () => {
-            // Primera página - encabezado y datos de cliente
+            // Primera página - encabezado y datos simplificados
             agregarTitulo();
-            let y = agregarInfoClientePedido();
+            let y = agregarInfoPedido();
             
             // Agregar la cabecera de la tabla de productos
             y = agregarCabeceraTabla(y);
@@ -242,8 +257,8 @@ const generarRemitoPDF = async (pedidoData, clienteData, productos) => {
             }
             
             // Variables para seguimiento
-            const PRODUCTOS_POR_PAGINA_PRIMERA = 10; // Aumentado para permitir más en primera página
-            const PRODUCTOS_POR_PAGINA_RESTO = 20;   // Aumentado para mayor densidad en páginas subsiguientes
+            const PRODUCTOS_POR_PAGINA_PRIMERA = 10; // Productos en primera página
+            const PRODUCTOS_POR_PAGINA_RESTO = 20;   // Productos en páginas siguientes
             let itemsEnPaginaActual = 0;
             let productosPorPagina = PRODUCTOS_POR_PAGINA_PRIMERA;
             
@@ -262,14 +277,11 @@ const generarRemitoPDF = async (pedidoData, clienteData, productos) => {
                 const alturaProducto = 30;
                 
                 // Forzar a dibujar al menos un producto en la primera página
-                // Solo verificamos si hay espacio para el producto principal, no para todos sus componentes
                 const espacioDisponible = doc.page.height - doc.page.margins.bottom - y;
                 const espacioMinNecesario = alturaProducto;
                 
-                // PRIMERA MEJORA CRÍTICA:
-                // Si estamos en la primera página (paginaActual === 1) y aún no hemos dibujado ningún producto 
-                // (itemsEnPaginaActual === 0), intentamos mostrar al menos el producto principal
-                // sin importar cuántos componentes tenga
+                // Si estamos en la primera página y aún no hemos dibujado ningún producto,
+                // intentamos mostrar al menos el producto principal
                 const forzarProductoEnPrimeraPagina = paginaActual === 1 && itemsEnPaginaActual === 0;
                 
                 // Si no hay espacio suficiente PARA EL PRODUCTO PRINCIPAL o hemos alcanzado el límite de elementos por página
@@ -317,7 +329,6 @@ const generarRemitoPDF = async (pedidoData, clienteData, productos) => {
                 y += 30;
                 itemsEnPaginaActual++;
                 
-                // TERCERA MEJORA CRÍTICA:
                 // Marcar que ya tenemos al menos un producto en la primera página
                 if (paginaActual === 1) {
                   alMenosUnProductoEnPrimeraPagina = true;
@@ -358,7 +369,7 @@ const generarRemitoPDF = async (pedidoData, clienteData, productos) => {
               }
             }
             
-            // Sección para firmas
+            // Sección para firmas simplificadas
             if (y + 100 > doc.page.height - doc.page.margins.bottom) {
               // No hay espacio para firmas, crear nueva página
               doc.addPage();
@@ -371,8 +382,9 @@ const generarRemitoPDF = async (pedidoData, clienteData, productos) => {
             doc.moveTo(100, y).lineTo(250, y).stroke();
             doc.moveTo(350, y).lineTo(500, y).stroke();
             
-            doc.text('Firma de Responsable', 130, y + 10);
-            doc.text('Firma de Cliente', 390, y + 10);
+            // Cambiar nombres de firmas a Supervisor/Operario
+            doc.text('Firma de Supervisor', 130, y + 10);
+            doc.text('Firma de Operario', 390, y + 10);
             
             // Actualizar total de páginas
             totalPaginas = paginas;
@@ -426,12 +438,3 @@ const generarRemitoPDF = async (pedidoData, clienteData, productos) => {
 module.exports = {
   generarRemitoPDF
 };
-
-
-
-
-
-
-
-
-

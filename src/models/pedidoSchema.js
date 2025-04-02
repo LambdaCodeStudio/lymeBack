@@ -65,10 +65,10 @@ const pedidoSchema = new mongoose.Schema({
         required: true
     },
     // Mantenemos campos antiguos para compatibilidad con código existente
-    servicio: { 
+    servicio: [{ 
         type: String, 
-        required: true 
-    },
+        default:"Todos los servicios" 
+    }],
     seccionDelServicio: {
         type: String,
         default: ''
@@ -258,3 +258,9 @@ module.exports = {
     Pedido,
     Contador
 };
+
+
+
+
+
+
