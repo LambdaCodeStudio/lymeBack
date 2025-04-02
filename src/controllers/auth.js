@@ -942,19 +942,29 @@ const getSupervisors = async (req, res) => {
 const getSupervisorInfo = async (req, res) => {
   try {
     // Obtener el usuario actual con su información de supervisor
+    console.log(`Buscando información del supervisor para usuario ${req.user.id}`);
+    
     const user = await User.findById(req.user.id)
       .select('supervisorId role')
       .lean();
     
     if (!user) {
+      console.warn(`Usuario no encontrado: ${req.user.id}`);
       return res.status(404).json({ 
         success: false,
         message: 'Usuario no encontrado'
       });
     }
     
+    console.log(`Usuario encontrado: ${user._id}, role: ${user.role}, supervisorId: ${user.supervisorId || 'no asignado'}`);
+    
     // Si no es un operario o no tiene supervisor asignado
-    if (user.role !== ROLES.OPERARIO || !user.supervisorId) {
+    if (user.role !== 'operario' || !user.supervisorId) {
+      const mensaje = user.role !== 'operario' 
+        ? `El usuario no es un operario (es ${user.role})` 
+        : 'El operario no tiene un supervisor asignado';
+      
+      console.warn(mensaje);
       return res.status(404).json({ 
         success: false,
         message: 'No hay supervisor asignado'
@@ -967,11 +977,14 @@ const getSupervisorInfo = async (req, res) => {
       .lean();
     
     if (!supervisor) {
+      console.warn(`Supervisor no encontrado con ID: ${user.supervisorId}`);
       return res.status(404).json({ 
         success: false,
         message: 'Supervisor no encontrado'
       });
     }
+    
+    console.log(`Información del supervisor obtenida correctamente: ${supervisor._id}`);
     
     res.json({
       success: true,

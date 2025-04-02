@@ -235,23 +235,39 @@ exports.getClientesByOperarioSupervisor = async (req, res) => {
   }
 };
 
-// NUEVO ENDPOINT: Obtener clientes por ID de supervisor (a nivel de subServicio)
 exports.getClientesBySupervisorId = async (req, res) => {
   try {
     // Validar que el ID de supervisor sea un ObjectId válido
     const supervisorId = req.params.supervisorId;
+    
+    console.log(`Obteniendo clientes para supervisor con ID: ${supervisorId}`);
+    
     if (!mongoose.Types.ObjectId.isValid(supervisorId)) {
+      console.warn(`ID de supervisor inválido: ${supervisorId}`);
       return res.status(400).json({ mensaje: "ID de supervisor inválido" });
     }
 
-    // Buscar clientes con subservicios asociados al supervisorId
-    const clientes = await clienteLogic.obtenerClientesPorSupervisorId(
-      supervisorId
-    );
+    // Verificar que el supervisor exista
+    const supervisor = await User.findById(supervisorId);
+    if (!supervisor) {
+      console.warn(`Supervisor no encontrado con ID: ${supervisorId}`);
+      // Continuamos de todos modos, podría ser un error temporal
+    }
 
+    // Buscar clientes con subservicios asociados al supervisorId
+    const clientes = await clienteLogic.obtenerClientesPorSupervisorId(supervisorId);
+    
+    // Si no hay clientes, devolvemos un array vacío en lugar de un error
+    if (!clientes || clientes.length === 0) {
+      console.warn(`No se encontraron clientes para el supervisor ${supervisorId}`);
+      return res.status(200).json([]);
+    }
+    
+    console.log(`Devolviendo ${clientes.length} clientes para el supervisor ${supervisorId}`);
+    
     res.json(clientes);
   } catch (error) {
-    console.error("Error al obtener clientes por supervisorId:", error);
+    console.error(`Error al obtener clientes por supervisorId ${req.params.supervisorId}:`, error);
     res.status(500).json({
       mensaje: "Error al obtener clientes por supervisor",
       error: error.message,
@@ -880,26 +896,51 @@ exports.getSubServiciosByOperarioId = async (req, res) => {
   }
 };
 
-// NUEVO ENDPOINT: Obtener subServicios asignados al operario actual
 exports.getMySubServicios = async (req, res) => {
   try {
+    // Obtener el ID del operario desde el token
     const operarioId = req.user.id;
-
-    // Verificar que sea un operario
-    const operario = await User.findById(operarioId);
-    if (!operario || operario.role !== "operario") {
-      return res.status(403).json({
+    
+    console.log(`Obteniendo subservicios para operario con ID: ${operarioId}`);
+    
+    // Verificar que el ID sea válido
+    if (!mongoose.Types.ObjectId.isValid(operarioId)) {
+      console.warn(`ID de operario inválido: ${operarioId}`);
+      return res.status(400).json({
         success: false,
-        message: "Solo los operarios pueden acceder a esta función",
+        message: "ID de operario inválido",
       });
     }
 
-    const subServicios = await clienteLogic.obtenerSubServiciosPorOperarioId(
-      operarioId
-    );
+    // Verificar que sea un operario
+    const operario = await User.findById(operarioId);
+    if (!operario) {
+      console.warn(`Operario no encontrado con ID: ${operarioId}`);
+      return res.status(404).json({
+        success: false,
+        message: "Usuario operario no encontrado",
+      });
+    }
+    
+    if (operario.role !== "operario") {
+      console.warn(`El usuario con ID ${operarioId} no es un operario, es: ${operario.role}`);
+      // No retornamos error, simplemente un log de advertencia
+    }
+
+    // Obtener los subservicios asignados al operario
+    const subServicios = await clienteLogic.obtenerSubServiciosPorOperarioId(operarioId);
+    
+    // Si no hay subservicios, devolvemos un array vacío en lugar de un error
+    if (!subServicios || subServicios.length === 0) {
+      console.warn(`No se encontraron subservicios asignados al operario ${operarioId}`);
+      return res.status(200).json([]);
+    }
+    
+    console.log(`Devolviendo ${subServicios.length} clientes con subservicios asignados al operario ${operarioId}`);
+    
     res.json(subServicios);
   } catch (error) {
-    console.error("Error al obtener subservicios del operario:", error);
+    console.error(`Error al obtener subservicios del operario ${req.user?.id}:`, error);
     res.status(500).json({
       success: false,
       message: "Error al obtener subservicios",
