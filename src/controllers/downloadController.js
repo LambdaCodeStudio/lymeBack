@@ -6,6 +6,7 @@ const { Pedido } = require('../models/pedidoSchema');
 const Cliente = require('../models/clienteSchema');
 const fs = require('fs');
 const path = require('path');
+const { generarReporteExcel, generarReporteMensual } = require('../services/excelService');
 
 /**
  * Genera un PDF de remito con paginación automática sin mostrar precios
@@ -579,15 +580,74 @@ const downloadRemito = async (req, res) => {
  * Generar y descargar un reporte Excel de pedidos por rango de fechas
  */
 const downloadExcel = async (req, res) => {
-  // Código existente sin cambios...
   try {
-    const { from, to } = req.query;
+    const { from, to, clienteId, productoId, supervisorId } = req.query;
     
     if (!from || !to) {
       return res.status(400).json({ mensaje: 'Se requieren las fechas de inicio y fin' });
     }
     
-    res.status(200).json({ mensaje: 'Funcionalidad no implementada completamente en esta versión' });
+    // Preparar fechas para la consulta
+    const fechaInicio = new Date(from);
+    fechaInicio.setHours(0, 0, 0, 0);
+    
+    const fechaFin = new Date(to);
+    fechaFin.setHours(23, 59, 59, 999);
+    
+    // Construir el filtro de consulta
+    const query = {
+      fecha: {
+        $gte: fechaInicio,
+        $lte: fechaFin
+      }
+    };
+    
+    // Añadir filtros adicionales si están presentes
+    if (clienteId) {
+      // Buscar por cliente como estructura anidada o por servicio tradicional
+      query.$or = [
+        { 'cliente.clienteId': clienteId },
+        { clienteId: clienteId }
+      ];
+    }
+    
+    if (supervisorId) {
+      query.$or = query.$or || [];
+      query.$or.push(
+        { supervisorId: supervisorId },
+        { 'supervisorId._id': supervisorId },
+        { userId: supervisorId },
+        { 'userId._id': supervisorId }
+      );
+    }
+    
+    if (productoId) {
+      query['productos.productoId'] = productoId;
+    }
+    
+    // Ejecutar la consulta con población de datos relacionados
+    const pedidos = await Pedido.find(query)
+      .populate({
+        path: 'productos.productoId',
+        select: 'nombre precio categoria'
+      })
+      .populate({
+        path: 'userId',
+        select: 'nombre email usuario'
+      })
+      .sort({ fecha: -1 });
+      
+    console.log(`Generando Excel para ${pedidos.length} pedidos`);
+    
+    // Generar el Excel usando el servicio
+    const excelBuffer = await generarReporteExcel(pedidos, fechaInicio, fechaFin);
+    
+    // Configurar headers y enviar respuesta
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename=reporte_${fechaInicio.toISOString().split('T')[0]}_${fechaFin.toISOString().split('T')[0]}.xlsx`);
+    res.setHeader('Content-Length', excelBuffer.length);
+    res.send(excelBuffer);
+    
   } catch (error) {
     console.error('Error al generar Excel:', error);
     res.status(500).json({ 
@@ -598,22 +658,62 @@ const downloadExcel = async (req, res) => {
 };
 
 /**
- * Generar y descargar un reporte mensual en formato PDF
+ * Generar y descargar un reporte mensual en formato Excel
  */
 const downloadReporteMensual = async (req, res) => {
-  // Código existente sin cambios...
   try {
-    const { month, year } = req.params;
+    const { from, to, clienteId } = req.query;
     
-    // Validar parámetros
-    const monthNum = parseInt(month);
-    const yearNum = parseInt(year);
-    
-    if (isNaN(monthNum) || isNaN(yearNum) || monthNum < 1 || monthNum > 12) {
-      return res.status(400).json({ mensaje: 'Mes o año inválidos' });
+    if (!from || !to) {
+      return res.status(400).json({ mensaje: 'Se requieren las fechas de inicio y fin' });
     }
     
-    res.status(200).json({ mensaje: 'Funcionalidad no implementada completamente en esta versión' });
+    // Preparar fechas para la consulta
+    const fechaInicio = new Date(from);
+    fechaInicio.setHours(0, 0, 0, 0);
+    
+    const fechaFin = new Date(to);
+    fechaFin.setHours(23, 59, 59, 999);
+    
+    // Construir el filtro de consulta
+    const query = {
+      fecha: {
+        $gte: fechaInicio,
+        $lte: fechaFin
+      }
+    };
+    
+    // Añadir filtro de cliente si está presente
+    if (clienteId) {
+      query.$or = [
+        { 'cliente.clienteId': clienteId },
+        { clienteId: clienteId }
+      ];
+    }
+    
+    // Ejecutar la consulta con población adecuada
+    const pedidos = await Pedido.find(query)
+      .populate({
+        path: 'productos.productoId',
+        select: 'nombre precio categoria'
+      })
+      .populate({
+        path: 'userId',
+        select: 'nombre email usuario'
+      })
+      .sort({ fecha: -1 });
+      
+    console.log(`Generando reporte mensual para ${pedidos.length} pedidos`);
+    
+    // Generar el reporte mensual usando el servicio
+    const excelBuffer = await generarReporteMensual(pedidos, fechaInicio, fechaFin, clienteId);
+    
+    // Configurar headers y enviar respuesta
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename=reporte_mensual_${fechaInicio.toISOString().split('T')[0]}_${fechaFin.toISOString().split('T')[0]}.xlsx`);
+    res.setHeader('Content-Length', excelBuffer.length);
+    res.send(excelBuffer);
+    
   } catch (error) {
     console.error('Error al generar reporte mensual:', error);
     res.status(500).json({ 

@@ -24,4 +24,11 @@ router.get('/excel', downloadController.downloadExcel);
  */
 router.get('/mensual/:month/:year', downloadController.downloadReporteMensual);
 
+/**
+ * @route   GET /api/downloads/reporte-mensual
+ * @desc    Descargar un reporte mensual por rango de fechas
+ * @access  Private
+ */
+router.get('/reporte-mensual', downloadController.downloadReporteMensual);
+
 module.exports = router;
