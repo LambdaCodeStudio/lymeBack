@@ -93,23 +93,41 @@ const generarReporteExcel = async (pedidos, fechaInicio, fechaFin) => {
   
   // Añadir filas de pedidos
   pedidos.forEach(pedido => {
-    const clienteNombre = pedido.userId && pedido.userId.nombre ? pedido.userId.nombre : 'N/A';
-    const cantidadProductos = pedido.productos ? pedido.productos.length : 0;
+    // Obtener el nombre del cliente correctamente
+    let clienteNombre = 'N/A';
+    
+    // Verificar estructura del cliente en pedido
+    if (pedido.cliente && pedido.cliente.nombreCliente) {
+      clienteNombre = pedido.cliente.nombreCliente;
+    } else if (pedido.userId && pedido.userId.nombre) {
+      clienteNombre = pedido.userId.nombre;
+    }
+    
+    // Contar cantidad de productos
+    let cantidadItems = 0;
     let totalPedido = 0;
     
     if (pedido.productos && Array.isArray(pedido.productos)) {
       pedido.productos.forEach(producto => {
+        cantidadItems += producto.cantidad || 0;
+        
         const precio = producto.productoId?.precio || 0;
         totalPedido += precio * (producto.cantidad || 0);
       });
     }
     
+    // Obtener servicio
+    let servicio = 'N/A';
+    if (pedido.servicio) {
+      servicio = Array.isArray(pedido.servicio) ? pedido.servicio.join(', ') : pedido.servicio;
+    }
+    
     pedidosSheet.addRow({
-      numero: pedido.numero || 'S/N',
+      numero: pedido.nPedido || 'S/N',
       fecha: pedido.fecha ? formatearFecha(new Date(pedido.fecha)) : 'N/A',
       cliente: clienteNombre,
-      servicio: pedido.servicio || 'N/A',
-      productos: cantidadProductos,
+      servicio: servicio,
+      productos: cantidadItems,
       total: totalPedido
     });
   });
@@ -119,9 +137,10 @@ const generarReporteExcel = async (pedidos, fechaInicio, fechaFin) => {
   
   // Configurar columnas
   productosSheet.columns = [
-    { header: 'Pedido', key: 'pedido', width: 12 },
+    { header: 'Pedido #', key: 'pedido', width: 12 },
     { header: 'Fecha', key: 'fecha', width: 15 },
     { header: 'Cliente', key: 'cliente', width: 25 },
+    { header: 'Servicio', key: 'servicio', width: 25 },
     { header: 'Producto', key: 'producto', width: 30 },
     { header: 'Cantidad', key: 'cantidad', width: 12 },
     { header: 'Precio Unit.', key: 'precio', width: 15, style: { numFmt: '"$"#,##0.00' } },
@@ -139,22 +158,47 @@ const generarReporteExcel = async (pedidos, fechaInicio, fechaFin) => {
   
   // Añadir filas de productos
   pedidos.forEach(pedido => {
-    const clienteNombre = pedido.userId && pedido.userId.nombre ? pedido.userId.nombre : 'N/A';
+    // Obtener el nombre del cliente correctamente
+    let clienteNombre = 'N/A';
+    
+    // Verificar estructura del cliente en pedido
+    if (pedido.cliente && pedido.cliente.nombreCliente) {
+      clienteNombre = pedido.cliente.nombreCliente;
+    } else if (pedido.userId && pedido.userId.nombre) {
+      clienteNombre = pedido.userId.nombre;
+    }
+    
+    // Obtener servicio
+    let servicio = 'N/A';
+    if (pedido.servicio) {
+      servicio = Array.isArray(pedido.servicio) ? pedido.servicio.join(', ') : pedido.servicio;
+    }
     
     if (pedido.productos && Array.isArray(pedido.productos)) {
       pedido.productos.forEach(producto => {
+        const cantidad = producto.cantidad || 0;
         const precio = producto.productoId?.precio || 0;
-        const subtotal = precio * (producto.cantidad || 0);
-        const productoNombre = producto.productoId?.nombre || 'N/A';
+        const subtotal = precio * cantidad;
+        
+        // Obtener nombre del producto de forma segura
+        let productoNombre = 'N/A';
+        if (producto.productoId) {
+          if (typeof producto.productoId === 'object' && producto.productoId.nombre) {
+            productoNombre = producto.productoId.nombre;
+          } else if (producto.nombre) {
+            productoNombre = producto.nombre;
+          }
+        }
           
         productosSheet.addRow({
-          pedido: pedido.numero || 'S/N',
+          pedido: pedido.nPedido || 'S/N',
           fecha: pedido.fecha ? formatearFecha(new Date(pedido.fecha)) : 'N/A',
           cliente: clienteNombre,
+          servicio: servicio,
           producto: productoNombre,
-          cantidad: producto.cantidad || 0,
+          cantidad: cantidad,
           precio: precio,
-          subtotal
+          subtotal: subtotal
         });
       });
     }
@@ -163,7 +207,6 @@ const generarReporteExcel = async (pedidos, fechaInicio, fechaFin) => {
   // Devolver buffer
   return await workbook.xlsx.writeBuffer();
 };
-// Agregar al archivo src/services/excelService.js
 
 /**
  * Genera un reporte mensual con estructura jerárquica de clientes > subservicios > sububicaciones
@@ -283,7 +326,8 @@ const generarReporteMensual = async (pedidos, fechaInicio, fechaFin, clienteId =
           sububicaciones: {},
           totalPedidos: 0,
           totalProductos: 0,
-          totalMonto: 0
+          totalMonto: 0,
+          pedidos: [] // Agregar array para guardar pedidos
         };
       }
       
@@ -292,6 +336,15 @@ const generarReporteMensual = async (pedidos, fechaInicio, fechaFin, clienteId =
       estructuraReporte[clienteId].subservicios[subServicioId].totalProductos += cantidadProductos;
       estructuraReporte[clienteId].subservicios[subServicioId].totalMonto += totalPedido;
       
+      // Guardar el pedido para detalle
+      estructuraReporte[clienteId].subservicios[subServicioId].pedidos.push({
+        id: pedido._id,
+        nPedido: pedido.nPedido,
+        fecha: pedido.fecha,
+        productos: pedido.productos,
+        monto: totalPedido
+      });
+      
       // Manejar estructura de sububicaciones
       if (subUbicacionId) {
         if (!estructuraReporte[clienteId].subservicios[subServicioId].sububicaciones[subUbicacionId]) {
@@ -299,7 +352,8 @@ const generarReporteMensual = async (pedidos, fechaInicio, fechaFin, clienteId =
             nombre: pedido.cliente.nombreSubUbicacion || 'Sububicación no identificada',
             totalPedidos: 0,
             totalProductos: 0,
-            totalMonto: 0
+            totalMonto: 0,
+            pedidos: [] // Agregar array para guardar pedidos
           };
         }
         
@@ -307,6 +361,15 @@ const generarReporteMensual = async (pedidos, fechaInicio, fechaFin, clienteId =
         estructuraReporte[clienteId].subservicios[subServicioId].sububicaciones[subUbicacionId].totalPedidos += 1;
         estructuraReporte[clienteId].subservicios[subServicioId].sububicaciones[subUbicacionId].totalProductos += cantidadProductos;
         estructuraReporte[clienteId].subservicios[subServicioId].sububicaciones[subUbicacionId].totalMonto += totalPedido;
+        
+        // Guardar el pedido para detalle
+        estructuraReporte[clienteId].subservicios[subServicioId].sububicaciones[subUbicacionId].pedidos.push({
+          id: pedido._id,
+          nPedido: pedido.nPedido,
+          fecha: pedido.fecha,
+          productos: pedido.productos,
+          monto: totalPedido
+        });
       }
     }
   });
@@ -329,7 +392,8 @@ const generarReporteMensual = async (pedidos, fechaInicio, fechaFin, clienteId =
           sububicaciones: {},
           totalPedidos: 0,
           totalProductos: 0,
-          totalMonto: 0
+          totalMonto: 0,
+          pedidos: []
         };
         
         // Añadir sububicaciones del subservicio
@@ -338,7 +402,8 @@ const generarReporteMensual = async (pedidos, fechaInicio, fechaFin, clienteId =
             nombre: subUbicacion.nombre,
             totalPedidos: 0,
             totalProductos: 0,
-            totalMonto: 0
+            totalMonto: 0,
+            pedidos: []
           };
         });
       });
@@ -437,6 +502,112 @@ const generarReporteMensual = async (pedidos, fechaInicio, fechaFin, clienteId =
     cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
   });
   
+  // Crear una hoja de detalle de productos
+  const detalleSheet = workbook.addWorksheet('Detalle de Productos');
+  
+  // Configurar columnas para la hoja de detalle
+  detalleSheet.columns = [
+    { header: 'Cliente', key: 'cliente', width: 25 },
+    { header: 'Subservicio', key: 'subservicio', width: 25 },
+    { header: 'Sububicación', key: 'sububicacion', width: 25 },
+    { header: 'Pedido #', key: 'pedido', width: 12 },
+    { header: 'Fecha', key: 'fecha', width: 15 },
+    { header: 'Producto', key: 'producto', width: 30 },
+    { header: 'Cantidad', key: 'cantidad', width: 12 },
+    { header: 'Precio Unit.', key: 'precio', width: 15, style: { numFmt: '"$"#,##0.00' } },
+    { header: 'Subtotal', key: 'subtotal', width: 15, style: { numFmt: '"$"#,##0.00' } }
+  ];
+  
+  // Estilos de encabezado para detalle
+  detalleSheet.getRow(1).font = { bold: true, size: 12 };
+  detalleSheet.getRow(1).fill = {
+    type: 'pattern',
+    pattern: 'solid',
+    fgColor: { argb: 'FF4F81BD' }
+  };
+  detalleSheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+  
+  // Iterar a través de la estructura para llenar la hoja de detalle
+  Object.keys(estructuraReporte).forEach(clienteId => {
+    const cliente = estructuraReporte[clienteId];
+    
+    Object.keys(cliente.subservicios).forEach(subServicioId => {
+      const subservicio = cliente.subservicios[subServicioId];
+      
+      // Procesar pedidos a nivel de subservicio
+      subservicio.pedidos.forEach(pedido => {
+        if (pedido.productos && Array.isArray(pedido.productos)) {
+          pedido.productos.forEach(producto => {
+            // Obtener datos del producto de forma segura
+            const cantidad = producto.cantidad || 0;
+            let precio = 0;
+            let productoNombre = 'N/A';
+            
+            if (producto.productoId) {
+              if (typeof producto.productoId === 'object') {
+                precio = producto.productoId.precio || 0;
+                productoNombre = producto.productoId.nombre || 'N/A';
+              }
+            }
+            
+            const subtotal = precio * cantidad;
+            
+            // Añadir fila con detalle del producto
+            detalleSheet.addRow({
+              cliente: cliente.nombre,
+              subservicio: subservicio.nombre,
+              sububicacion: '',
+              pedido: pedido.nPedido || 'S/N',
+              fecha: pedido.fecha ? formatearFecha(new Date(pedido.fecha)) : 'N/A',
+              producto: productoNombre,
+              cantidad: cantidad,
+              precio: precio,
+              subtotal: subtotal
+            });
+          });
+        }
+      });
+      
+      // Procesar pedidos a nivel de sububicación
+      Object.keys(subservicio.sububicaciones).forEach(subUbicacionId => {
+        const sububicacion = subservicio.sububicaciones[subUbicacionId];
+        
+        sububicacion.pedidos.forEach(pedido => {
+          if (pedido.productos && Array.isArray(pedido.productos)) {
+            pedido.productos.forEach(producto => {
+              // Obtener datos del producto de forma segura
+              const cantidad = producto.cantidad || 0;
+              let precio = 0;
+              let productoNombre = 'N/A';
+              
+              if (producto.productoId) {
+                if (typeof producto.productoId === 'object') {
+                  precio = producto.productoId.precio || 0;
+                  productoNombre = producto.productoId.nombre || 'N/A';
+                }
+              }
+              
+              const subtotal = precio * cantidad;
+              
+              // Añadir fila con detalle del producto
+              detalleSheet.addRow({
+                cliente: cliente.nombre,
+                subservicio: subservicio.nombre,
+                sububicacion: sububicacion.nombre,
+                pedido: pedido.nPedido || 'S/N',
+                fecha: pedido.fecha ? formatearFecha(new Date(pedido.fecha)) : 'N/A',
+                producto: productoNombre,
+                cantidad: cantidad,
+                precio: precio,
+                subtotal: subtotal
+              });
+            });
+          }
+        });
+      });
+    });
+  });
+  
   // Agregar una hoja de resumen
   const resumenSheet = workbook.addWorksheet('Resumen');
   
@@ -505,6 +676,8 @@ const generarReporteMensual = async (pedidos, fechaInicio, fechaFin, clienteId =
   // Devolver buffer
   return await workbook.xlsx.writeBuffer();
 };
+
+// Export all functions
 module.exports = {
   generarReporteExcel,
   generarReporteMensual
