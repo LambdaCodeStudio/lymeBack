@@ -95,6 +95,15 @@ const userSchema = new mongoose.Schema({
     },
     required: [true, 'La sección es requerida'],
     index: true // Indexar para búsquedas por sección
+  },
+  // Nuevo campo para productos favoritos
+  favoritos: {
+    type: [{ 
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Producto'
+    }],
+    default: [],
+    index: true // Indexar para búsquedas rápidas
   }
 }, { 
   timestamps: true, // Mantener createdAt y updatedAt

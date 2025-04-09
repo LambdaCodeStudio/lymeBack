@@ -182,10 +182,10 @@ exports.getPedidosByFecha = async (req, res) => {
  */
 exports.getPedidosByEstado = async (req, res) => {
     try {
-        const estados = ['pendiente', 'aprobado', 'rechazado'];
+        const estados = ['pendiente', 'aprobado_supervisor', 'en_preparacion', 'entregado', 'aprobado', 'rechazado'];
         if (!estados.includes(req.params.estado)) {
             return res.status(400).json({ 
-                mensaje: 'Estado no válido. Debe ser: pendiente, aprobado o rechazado' 
+                mensaje: 'Estado no válido. Debe ser: pendiente, aprobado_supervisor, en_preparacion, entregado, aprobado o rechazado' 
             });
         }
 
@@ -333,9 +333,6 @@ exports.getPedidosOrdenados = async (req, res) => {
 /**
  * Crea un nuevo pedido
  */
-/**
- * Crea un nuevo pedido
- */
 exports.createPedido = async (req, res) => {
     try {
         // Validar campos requeridos
@@ -413,6 +410,9 @@ exports.createPedido = async (req, res) => {
             }
         }
 
+        // IMPORTANTE: Todos los pedidos ahora comienzan como pendientes
+        req.body.estado = 'pendiente';
+
         // Crear el pedido
         const pedido = await pedidoLogic.crearPedido(req.body);
         res.status(201).json(pedido);
@@ -441,6 +441,22 @@ exports.updatePedido = async (req, res) => {
         // Si se actualiza a estado "aprobado", registrar quién lo aprobó
         if (req.body.estado === 'aprobado' && req.user && req.user.id) {
             req.body.aprobadoPor = req.user.id;
+        }
+        // Si se actualiza a estado "aprobado_supervisor", registrar quién lo aprobó
+        else if (req.body.estado === 'aprobado_supervisor' && req.user && req.user.id) {
+            req.body.aprobadoPorSupervisor = req.user.id;
+        }
+        // Si se actualiza a estado "en_preparacion", registrar quién lo marcó
+        else if (req.body.estado === 'en_preparacion' && req.user && req.user.id) {
+            req.body.usuarioPreparacion = req.user.id;
+        }
+        // Si se actualiza a estado "entregado", registrar quién lo entregó
+        else if (req.body.estado === 'entregado' && req.user && req.user.id) {
+            req.body.usuarioEntrega = req.user.id;
+        }
+        // Si se actualiza a estado "rechazado", registrar quién lo rechazó
+        else if (req.body.estado === 'rechazado' && req.user && req.user.id) {
+            req.body.rechazadoPor = req.user.id;
         }
 
         const pedido = await pedidoLogic.actualizarPedido(req.params.id, req.body);
@@ -537,6 +553,9 @@ exports.getPedidosEstadisticas = async (req, res) => {
     }
 };
 
+/**
+ * Rechaza un pedido y restaura el stock
+ */
 exports.rechazarPedido = async (req, res) => {
     try {
         // Validar que el ID sea un ObjectId válido
@@ -545,48 +564,39 @@ exports.rechazarPedido = async (req, res) => {
         }
 
         const pedidoId = req.params.id;
+        const userId = req.user ? req.user.id : null;
         const { motivo } = req.body;
 
-        // Obtener el pedido para restaurar stock
-        const pedido = await Pedido.findById(pedidoId);
-        if (!pedido) {
+        // Verificar si hay un usuario autenticado
+        if (!userId) {
+            return res.status(401).json({ mensaje: 'Usuario no autenticado' });
+        }
+
+        // Obtener el pedido actual
+        const pedidoActual = await Pedido.findById(pedidoId);
+        if (!pedidoActual) {
             return res.status(404).json({ mensaje: 'Pedido no encontrado' });
         }
 
-        // Solo rechazar si está pendiente
-        if (pedido.estado !== 'pendiente') {
+        // Solo rechazar si está pendiente, aprobado_supervisor o en_preparacion
+        if (pedidoActual.estado !== 'pendiente' && 
+            pedidoActual.estado !== 'aprobado_supervisor' && 
+            pedidoActual.estado !== 'en_preparacion') {
             return res.status(400).json({ 
-                mensaje: 'Solo se pueden rechazar pedidos pendientes' 
+                mensaje: 'Solo se pueden rechazar pedidos pendientes, aprobados por supervisor o en preparación' 
             });
         }
 
-        // IMPORTANTE: Restaurar el stock de cada producto
-        for (const item of pedido.productos) {
-            const productoId = typeof item.productoId === 'object' ? 
-                item.productoId._id : item.productoId;
-            const cantidad = item.cantidad;
-            
-            // Obtener producto actual
-            const producto = await productoLogic.obtenerPorId(productoId);
-            if (producto) {
-                // Aumentar stock y reducir vendidos
-                await productoLogic.actualizarProducto(productoId, {
-                    stock: producto.stock + cantidad,
-                    vendidos: Math.max(0, (producto.vendidos || 0) - cantidad)
-                });
-                console.log(`Stock restaurado para producto ${productoId}: +${cantidad} unidades`);
-            }
-        }
-
-        // Actualizar estado del pedido
-        pedido.estado = 'rechazado';
-        pedido.observaciones = motivo;
-        pedido.fechaRechazo = new Date();
-        pedido.rechazadoPor = req.user.id;
-
-        await pedido.save();
+        // Rechazar el pedido incluyendo el motivo en las observaciones
+        const pedidoActualizado = await pedidoLogic.rechazarPedido(pedidoId, userId);
         
-        // Devolver el pedido rechazado con información completa
+        // Actualizar las observaciones con el motivo si se proporcionó
+        if (motivo) {
+            pedidoActualizado.observaciones = motivo;
+            await pedidoActualizado.save();
+        }
+        
+        // Obtener el pedido rechazado con información completa
         const pedidoRechazado = await Pedido.findById(pedidoId)
             .populate('userId', 'nombre email usuario apellido role')
             .populate('supervisorId', 'nombre email usuario apellido role')
@@ -595,7 +605,7 @@ exports.rechazarPedido = async (req, res) => {
 
         res.json({
             success: true,
-            mensaje: 'Pedido rechazado correctamente',
+            mensaje: 'Pedido rechazado correctamente y stock restaurado',
             pedido: pedidoRechazado
         });
     } catch (error) {
@@ -668,34 +678,225 @@ exports.getPedidosRechazadosByOperarioId = async (req, res) => {
     }
 };
 
-exports.rechazarPedido = async (req, res) => {
+/**
+ * Aprueba un pedido por parte de un supervisor (primer nivel)
+ */
+exports.aprobarPedidoPorSupervisor = async (req, res) => {
     try {
-        const pedido = await pedidoLogic.rechazarPedido(req.params.id);
+        // Validar que el ID sea un ObjectId válido
+        if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+            return res.status(400).json({ mensaje: 'ID de pedido inválido' });
+        }
+
+        const pedidoId = req.params.id;
+        const userId = req.user ? req.user.id : null;
+
+        // Verificar si hay un usuario autenticado
+        if (!userId) {
+            return res.status(401).json({ mensaje: 'Usuario no autenticado' });
+        }
+
+        // Obtener el pedido actual
+        const pedidoActual = await Pedido.findById(pedidoId);
+        if (!pedidoActual) {
+            return res.status(404).json({ mensaje: 'Pedido no encontrado' });
+        }
+
+        // Solo aprobar por supervisor si está pendiente
+        if (pedidoActual.estado !== 'pendiente') {
+            return res.status(400).json({ 
+                mensaje: 'Solo se pueden aprobar por supervisor pedidos pendientes' 
+            });
+        }
+
+        // Aprobar el pedido por supervisor
+        const pedidoActualizado = await pedidoLogic.aprobarPedidoPorSupervisor(pedidoId, userId);
+        
+        // Obtener el pedido aprobado con información completa
+        const pedidoAprobado = await Pedido.findById(pedidoId)
+            .populate('userId', 'nombre email usuario apellido role')
+            .populate('supervisorId', 'nombre email usuario apellido role')
+            .populate('productos.productoId')
+            .populate('aprobadoPorSupervisor', 'nombre email usuario apellido');
+
         res.json({
-            mensaje: 'Pedido rechazado correctamente y stock restaurado',
-            pedido
+            success: true,
+            mensaje: 'Pedido aprobado por supervisor correctamente',
+            pedido: pedidoAprobado
         });
     } catch (error) {
-        console.error('Error al rechazar pedido:', error);
+        console.error('Error al aprobar pedido por supervisor:', error);
         res.status(500).json({ 
-            mensaje: 'Error al rechazar pedido', 
+            mensaje: 'Error al aprobar pedido por supervisor', 
             error: error.message 
         });
     }
 };
 
-exports.aprobarPedido = async (req, res) => {
+/**
+ * Marca un pedido como en preparación
+ */
+exports.marcarPedidoEnPreparacion = async (req, res) => {
     try {
-        const pedido = await pedidoLogic.aprobarPedido(req.params.id);
+        // Validar que el ID sea un ObjectId válido
+        if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+            return res.status(400).json({ mensaje: 'ID de pedido inválido' });
+        }
+
+        const pedidoId = req.params.id;
+        const userId = req.user ? req.user.id : null;
+
+        // Verificar si hay un usuario autenticado
+        if (!userId) {
+            return res.status(401).json({ mensaje: 'Usuario no autenticado' });
+        }
+
+        // Obtener el pedido actual
+        const pedidoActual = await Pedido.findById(pedidoId);
+        if (!pedidoActual) {
+            return res.status(404).json({ mensaje: 'Pedido no encontrado' });
+        }
+
+        // Solo marcar como en preparación si está aprobado por supervisor o aprobado definitivamente
+        if (pedidoActual.estado !== 'aprobado_supervisor' && pedidoActual.estado !== 'aprobado') {
+            return res.status(400).json({ 
+                mensaje: 'Solo se pueden marcar como en preparación pedidos aprobados por supervisor o aprobados definitivamente' 
+            });
+        }
+
+        // Marcar el pedido como en preparación
+        const pedidoActualizado = await pedidoLogic.marcarPedidoEnPreparacion(pedidoId, userId);
+        
+        // Obtener el pedido actualizado con información completa
+        const pedidoPreparacion = await Pedido.findById(pedidoId)
+            .populate('userId', 'nombre email usuario apellido role')
+            .populate('supervisorId', 'nombre email usuario apellido role')
+            .populate('productos.productoId')
+            .populate('usuarioPreparacion', 'nombre email usuario apellido');
+
         res.json({
-            mensaje: 'Pedido aprobado correctamente',
-            pedido
+            success: true,
+            mensaje: 'Pedido marcado en preparación correctamente',
+            pedido: pedidoPreparacion
         });
     } catch (error) {
-        console.error('Error al aprobar pedido:', error);
+        console.error('Error al marcar pedido en preparación:', error);
         res.status(500).json({ 
-            mensaje: 'Error al aprobar pedido', 
+            mensaje: 'Error al marcar pedido en preparación', 
             error: error.message 
         });
     }
 };
+
+/**
+ * Marca un pedido como entregado
+ */
+exports.marcarPedidoEntregado = async (req, res) => {
+    try {
+        // Validar que el ID sea un ObjectId válido
+        if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+            return res.status(400).json({ mensaje: 'ID de pedido inválido' });
+        }
+
+        const pedidoId = req.params.id;
+        const userId = req.user ? req.user.id : null;
+
+        // Verificar si hay un usuario autenticado
+        if (!userId) {
+            return res.status(401).json({ mensaje: 'Usuario no autenticado' });
+        }
+
+        // Obtener el pedido actual
+        const pedidoActual = await Pedido.findById(pedidoId);
+        if (!pedidoActual) {
+            return res.status(404).json({ mensaje: 'Pedido no encontrado' });
+        }
+
+        // Solo marcar como entregado si está en preparación
+        if (pedidoActual.estado !== 'en_preparacion') {
+            return res.status(400).json({ 
+                mensaje: 'Solo se pueden marcar como entregados pedidos en preparación' 
+            });
+        }
+
+        // Marcar el pedido como entregado
+        const pedidoActualizado = await pedidoLogic.marcarPedidoEntregado(pedidoId, userId);
+        
+        // Obtener el pedido actualizado con información completa
+        const pedidoEntregado = await Pedido.findById(pedidoId)
+            .populate('userId', 'nombre email usuario apellido role')
+            .populate('supervisorId', 'nombre email usuario apellido role')
+            .populate('productos.productoId')
+            .populate('usuarioEntrega', 'nombre email usuario apellido');
+
+        res.json({
+            success: true,
+            mensaje: 'Pedido marcado como entregado correctamente',
+            pedido: pedidoEntregado
+        });
+    } catch (error) {
+        console.error('Error al marcar pedido como entregado:', error);
+        res.status(500).json({ 
+            mensaje: 'Error al marcar pedido como entregado', 
+            error: error.message 
+        });
+    }
+};
+
+/**
+ * Aprueba un pedido definitivamente (nivel admin)
+ */
+exports.aprobarPedidoFinal = async (req, res) => {
+    try {
+        // Validar que el ID sea un ObjectId válido
+        if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+            return res.status(400).json({ mensaje: 'ID de pedido inválido' });
+        }
+
+        const pedidoId = req.params.id;
+        const userId = req.user ? req.user.id : null;
+
+        // Verificar si hay un usuario autenticado
+        if (!userId) {
+            return res.status(401).json({ mensaje: 'Usuario no autenticado' });
+        }
+
+        // Obtener el pedido actual
+        const pedidoActual = await Pedido.findById(pedidoId);
+        if (!pedidoActual) {
+            return res.status(404).json({ mensaje: 'Pedido no encontrado' });
+        }
+
+        // Solo aprobar definitivamente si está pendiente o aprobado por supervisor
+        if (pedidoActual.estado !== 'pendiente' && pedidoActual.estado !== 'aprobado_supervisor') {
+            return res.status(400).json({ 
+                mensaje: 'Solo se pueden aprobar definitivamente pedidos pendientes o aprobados por supervisor' 
+            });
+        }
+
+        // Aprobar el pedido definitivamente
+        const pedidoActualizado = await pedidoLogic.aprobarPedidoFinal(pedidoId, userId);
+        
+        // Obtener el pedido actualizado con información completa
+        const pedidoAprobado = await Pedido.findById(pedidoId)
+            .populate('userId', 'nombre email usuario apellido role')
+            .populate('supervisorId', 'nombre email usuario apellido role')
+            .populate('productos.productoId')
+            .populate('aprobadoPor', 'nombre email usuario apellido');
+
+        res.json({
+            success: true,
+            mensaje: 'Pedido aprobado definitivamente',
+            pedido: pedidoAprobado
+        });
+    } catch (error) {
+        console.error('Error al aprobar pedido definitivamente:', error);
+        res.status(500).json({ 
+            mensaje: 'Error al aprobar pedido definitivamente', 
+            error: error.message 
+        });
+    }
+};
+
+// Para mantener compatibilidad con código existente, redireccionar aprobarPedido a aprobarPedidoFinal
+exports.aprobarPedido = exports.aprobarPedidoFinal;

@@ -17,9 +17,16 @@ router.get('/', pedidoController.getPedidos);
 router.get('/corte-control', pedidoController.getPedidosCorteControl);
 router.get('/estadisticas', pedidoController.getPedidosEstadisticas);
 
-// Rutas específicas para acciones sobre pedidos
+// Rutas específicas para acciones sobre pedidos (MODIFICADAS PARA INCLUIR NUEVOS ESTADOS)
 router.post('/:id/rechazar', pedidoController.rechazarPedido);
+router.post('/:id/aprobar-supervisor', pedidoController.aprobarPedidoPorSupervisor);
+router.post('/:id/aprobar-final', pedidoController.aprobarPedidoFinal);
+router.post('/:id/en-preparacion', pedidoController.marcarPedidoEnPreparacion);
+router.post('/:id/entregado', pedidoController.marcarPedidoEntregado);
+
+// Mantener la ruta original de aprobar para compatibilidad
 router.post('/:id/aprobar', pedidoController.aprobarPedido);
+
 router.get('/operario/:operarioId', pedidoController.getPedidosByOperarioId);
 router.get('/operario/:operarioId/rechazados', pedidoController.getPedidosRechazadosByOperarioId);
 

@@ -1000,6 +1000,179 @@ const getSupervisorInfo = async (req, res) => {
   }
 };
 
+/**
+ * Obtiene la lista de productos favoritos del usuario actual
+ * @param {Object} req - Objeto de solicitud Express
+ * @param {Object} res - Objeto de respuesta Express
+ * @returns {Object} - Lista de favoritos o error
+ */
+const getFavoritos = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id)
+      .select('favoritos')
+      .populate('favoritos', 'nombre descripcion categoria subCategoria precio stock imagen imageUrl hasImage esCombo')
+      .lean();
+    
+    if (!user) {
+      return res.status(404).json({ 
+        success: false,
+        message: 'Usuario no encontrado'
+      });
+    }
+    
+    res.json({
+      success: true,
+      favoritos: user.favoritos || []
+    });
+  } catch (error) {
+    console.error('Error en getFavoritos:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Error al obtener favoritos',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+/**
+ * Añade un producto a la lista de favoritos del usuario
+ * @param {Object} req - Objeto de solicitud Express
+ * @param {Object} res - Objeto de respuesta Express
+ * @returns {Object} - Respuesta con lista actualizada o error
+ */
+const addFavorito = async (req, res) => {
+  try {
+    const { productoId } = req.body;
+    
+    if (!productoId) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'ID de producto requerido'
+      });
+    }
+    
+    // Verificar que el ID es válido
+    if (!mongoose.Types.ObjectId.isValid(productoId)) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'ID de producto inválido'
+      });
+    }
+    
+    // Verificar que el producto existe
+    const Producto = require('../models/productoSchema');
+    const producto = await Producto.findById(productoId);
+    
+    if (!producto) {
+      return res.status(404).json({ 
+        success: false,
+        message: 'Producto no encontrado'
+      });
+    }
+    
+    // Añadir a favoritos solo si no está ya en la lista
+    const user = await User.findByIdAndUpdate(
+      req.user.id,
+      { $addToSet: { favoritos: productoId } },
+      { new: true }
+    ).select('favoritos');
+    
+    res.json({
+      success: true,
+      message: 'Producto añadido a favoritos',
+      favoritos: user.favoritos
+    });
+  } catch (error) {
+    console.error('Error en addFavorito:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Error al añadir a favoritos',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+/**
+ * Elimina un producto de la lista de favoritos del usuario
+ * @param {Object} req - Objeto de solicitud Express
+ * @param {Object} res - Objeto de respuesta Express
+ * @returns {Object} - Respuesta con lista actualizada o error
+ */
+const removeFavorito = async (req, res) => {
+  try {
+    const { productoId } = req.params;
+    
+    if (!productoId) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'ID de producto requerido'
+      });
+    }
+    
+    // Eliminar de favoritos
+    const user = await User.findByIdAndUpdate(
+      req.user.id,
+      { $pull: { favoritos: productoId } },
+      { new: true }
+    ).select('favoritos');
+    
+    res.json({
+      success: true,
+      message: 'Producto eliminado de favoritos',
+      favoritos: user.favoritos
+    });
+  } catch (error) {
+    console.error('Error en removeFavorito:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Error al eliminar de favoritos',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+/**
+ * Sincroniza los favoritos del localStorage con la base de datos
+ * @param {Object} req - Objeto de solicitud Express
+ * @param {Object} res - Objeto de respuesta Express
+ * @returns {Object} - Respuesta con lista sincronizada o error
+ */
+const syncFavoritos = async (req, res) => {
+  try {
+    const { favoritos } = req.body;
+    
+    if (!Array.isArray(favoritos)) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Lista de favoritos inválida'
+      });
+    }
+    
+    // Verificar que todos los IDs son válidos
+    const validFavoritos = favoritos.filter(id => mongoose.Types.ObjectId.isValid(id));
+    
+    // Actualizar favoritos del usuario
+    const user = await User.findByIdAndUpdate(
+      req.user.id,
+      { $set: { favoritos: validFavoritos } },
+      { new: true }
+    ).select('favoritos');
+    
+    res.json({
+      success: true,
+      message: 'Favoritos sincronizados correctamente',
+      favoritos: user.favoritos
+    });
+  } catch (error) {
+    console.error('Error en syncFavoritos:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Error al sincronizar favoritos',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
 module.exports = {
   login,
   register,
@@ -1012,5 +1185,9 @@ module.exports = {
   toggleUserStatus,
   reactivateTemporaryOperator,
   getSupervisors,
-  getSupervisorInfo
+  getSupervisorInfo,
+  getFavoritos,
+  addFavorito,
+  removeFavorito,
+  syncFavoritos
 };

@@ -120,9 +120,10 @@ const pedidoSchema = new mongoose.Schema({
         type: String,
         default: ''
     },
+    // Estados del pedido actualizados
     estado: {
         type: String,
-        enum: ['pendiente', 'aprobado', 'rechazado'],
+        enum: ['pendiente', 'aprobado_supervisor', 'en_preparacion', 'entregado', 'aprobado', 'rechazado'],
         default: 'pendiente',
         index: true // Índice para filtrar por estado
     },
@@ -131,6 +132,35 @@ const pedidoSchema = new mongoose.Schema({
         type: Date
     },
     aprobadoPor: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+    },
+    // Nuevos campos para tracking de estados adicionales
+    fechaAprobacionSupervisor: {
+        type: Date
+    },
+    aprobadoPorSupervisor: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+    },
+    fechaPreparacion: {
+        type: Date
+    },
+    usuarioPreparacion: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+    },
+    fechaEntrega: {
+        type: Date
+    },
+    usuarioEntrega: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+    },
+    fechaRechazo: {
+        type: Date
+    },
+    rechazadoPor: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User'
     },
@@ -264,9 +294,3 @@ module.exports = {
     Pedido,
     Contador
 };
-
-
-
-
-
-

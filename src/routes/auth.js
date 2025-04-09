@@ -12,7 +12,11 @@ const {
   toggleUserStatus,
   reactivateTemporaryOperator,
   getSupervisors,
-  getSupervisorInfo
+  getSupervisorInfo,
+  getFavoritos,
+  addFavorito,
+  removeFavorito,
+  syncFavoritos
 } = require('../controllers/auth');
 const { auth } = require('../middleware/auth');
 const { isAdmin, isOnlyAdmin, hasRole } = require('../middleware/roleMiddleware');
@@ -205,5 +209,12 @@ router.get('/supervisors', getSupervisors);
  * @access  Privado (para cualquier usuario autenticado, principalmente operarios)
  */
 router.get('/me/supervisor', getSupervisorInfo);
+
+
+// Rutas protegidas para favoritos (requieren autenticación)
+router.get('/favoritos', getFavoritos);
+router.post('/favoritos', addFavorito);
+router.delete('/favoritos/:productoId', removeFavorito);
+router.post('/favoritos/sync', syncFavoritos);
 
 module.exports = router;

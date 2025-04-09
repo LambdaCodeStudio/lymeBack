@@ -476,14 +476,18 @@ const downloadRemito = async (req, res) => {
     
     // Buscar el pedido con una población completa y explícita
     const pedido = await Pedido.findById(pedidoId)
-      .populate({
-        path: 'userId',
-        select: 'nombre email usuario apellido'
-      })
-      .populate({
-        path: 'productos.productoId',
-        select: 'nombre precio descripcion categoria esCombo itemsCombo'
-      });
+    .populate({
+      path: 'userId',
+      select: 'nombre email usuario apellido'
+    })
+    .populate({
+      path: 'supervisorId',
+      select: 'usuario nombre email apellido'
+    }) 
+    .populate({
+      path: 'productos.productoId',
+      select: 'nombre precio descripcion categoria esCombo itemsCombo'
+    });
       
     console.log('Pedido encontrado:', pedido ? 'Sí' : 'No');
     
@@ -527,7 +531,6 @@ const downloadRemito = async (req, res) => {
       });
     }
     
-    // MODIFICACIÓN IMPORTANTE: Crear un objeto con TODA la información necesaria
     const pedidoData = {
       _id: pedido._id.toString(),
       numero: pedido.nPedido,
@@ -536,6 +539,8 @@ const downloadRemito = async (req, res) => {
       fecha: pedido.fecha,
       // Incluir el objeto cliente completo
       cliente: pedido.cliente,
+      // Pasar supervisorId explícitamente
+      supervisorId: pedido.supervisorId,
       // Pasamos la referencia completa a pedido para acceder a los datos del supervisor
       pedido: pedido
     };
