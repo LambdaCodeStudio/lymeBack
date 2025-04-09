@@ -63,4 +63,8 @@ router.delete('/:id', pedidoController.deletePedido);
 // Importante: esta ruta debe ir AL FINAL para evitar conflictos con otras rutas
 router.get('/:id', pedidoController.getPedidoById);
 
+//Endpoint para traer todos los pedidos de un supervisor con su id (fix parte de "mis pedidos");
+router.get('/supervisor/:supervisorId/fechas', pedidoController.getPedidosBySupervisorIdAndDateRange);
+
+
 module.exports = router;

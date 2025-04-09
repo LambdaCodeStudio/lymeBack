@@ -29,6 +29,24 @@ const generarRemitoPDF = async (pedidoData, clienteData, productos) => {
         throw new Error("La lista de productos debe ser un array");
       }
 
+      // Función para obtener el supervisor desde su ID (usando userId)
+      const obtenerSupervisorData = async (userId) => {
+        try {
+          if (!userId) return null;
+          
+          // Obtener el modelo de Usuario
+          const User = mongoose.model("User");
+          
+          // Buscar el supervisor por ID
+          const supervisor = await User.findById(userId).select('usuario nombre apellido');
+          
+          return supervisor;
+        } catch (error) {
+          console.error("Error al obtener supervisor:", error);
+          return null;
+        }
+      };
+
       // Función para procesar productos y expandir combos
       const procesarProductos = async (productos) => {
         try {
@@ -105,6 +123,20 @@ const generarRemitoPDF = async (pedidoData, clienteData, productos) => {
         }
       };
 
+      // Obtener datos del supervisor si existe el ID del usuario
+      let supervisorData = null;
+      if (pedidoData.userId) {
+        // Intentar obtener los datos del supervisor
+        obtenerSupervisorData(pedidoData.userId)
+          .then(supervisor => {
+            supervisorData = supervisor;
+            console.log("Supervisor obtenido:", supervisorData);
+          })
+          .catch(error => {
+            console.error("Error al obtener supervisor:", error);
+          });
+      }
+
       console.log(
         `Iniciando generación de PDF con ${productos.length} productos`
       );
@@ -162,7 +194,11 @@ const generarRemitoPDF = async (pedidoData, clienteData, productos) => {
                 console.error("Error al agregar logo:", logoError);
               }
 
-              // No agregamos texto de título ya que el logo es suficiente
+              // Agregar número de pedido a la derecha
+              const numeroPedido = pedidoData.numero || pedidoData.nPedido || '';
+              doc.font('Helvetica-Bold').fontSize(12);
+              doc.text(`Remito N°: ${numeroPedido}`, 350, 70, { align: 'right' });
+              
               doc.moveDown();
               doc.fontSize(12).font("Helvetica");
             };
@@ -170,167 +206,124 @@ const generarRemitoPDF = async (pedidoData, clienteData, productos) => {
             // Función para agregar información del pedido incluyendo cliente, subservicio y sububicación
             const agregarInfoPedido = () => {
               const y = 120; // Posición Y inicial
-              let currentY = y;
-
+              
+              // Dividimos la página en dos columnas para mejor aprovechamiento del espacio
+              const colIzquierda = 50;  // Margen izquierdo
+              const colDerecha = 300;   // Inicio de la columna derecha
+              const anchoTexto = 200;   // Ancho del texto en cada columna
+              
+              // COLUMNA IZQUIERDA: Cliente y Subservicio
+              
               // Cliente - Acceder correctamente a la estructura
-              doc
-                .fontSize(10)
-                .font("Helvetica-Bold")
-                .text("Cliente:", 50, currentY);
-
+              doc.fontSize(10).font('Helvetica-Bold').text('Cliente:', colIzquierda, y);
+              
               // Primero intentamos acceder a cliente.nombreCliente (estructura nueva)
               if (pedidoData.cliente && pedidoData.cliente.nombreCliente) {
-                doc
-                  .font("Helvetica")
-                  .text(pedidoData.cliente.nombreCliente, 120, currentY, {
-                    width: 400,
-                    ellipsis: true,
-                  });
-              }
+                doc.font('Helvetica').text(pedidoData.cliente.nombreCliente, colIzquierda + 70, y, { width: anchoTexto, ellipsis: true });
+              } 
               // Si no está disponible, usamos el campo servicio (estructura antigua)
               else if (pedidoData.servicio) {
                 // Manejar si servicio es un array o string
-                const servicioText = Array.isArray(pedidoData.servicio)
-                  ? pedidoData.servicio.join(", ")
+                const servicioText = Array.isArray(pedidoData.servicio) 
+                  ? pedidoData.servicio.join(', ') 
                   : pedidoData.servicio;
-                doc
-                  .font("Helvetica")
-                  .text(servicioText || "No especificado", 120, currentY, {
-                    width: 400,
-                    ellipsis: true,
-                  });
+                doc.font('Helvetica').text(servicioText || 'No especificado', colIzquierda + 70, y, { width: anchoTexto, ellipsis: true });
               } else {
-                doc
-                  .font("Helvetica")
-                  .text("No especificado", 120, currentY, { width: 400 });
-              }
-              currentY += 20;
-
-              // Agregar supervisor
-              let supervisorNombre = 'No especificado';
-
-              // Imprimir en consola para depuración 
-              console.log('Datos del supervisor:', JSON.stringify(pedidoData.supervisorId || {}));
-              
-              // Extraer directamente el valor del campo usuario
-              if (pedidoData.supervisorId && 
-                  typeof pedidoData.supervisorId === 'object' && 
-                  pedidoData.supervisorId.usuario) {
-                supervisorNombre = pedidoData.supervisorId.usuario;
-                console.log('Usuario encontrado:', supervisorNombre);
+                doc.font('Helvetica').text('No especificado', colIzquierda + 70, y, { width: anchoTexto });
               }
               
-              doc.fontSize(10).font('Helvetica-Bold').text('Supervisor:', 50, currentY);
-              doc.font('Helvetica').text(supervisorNombre, 120, currentY, { width: 400, ellipsis: true });
-              currentY += 20;
-
               // Agregar subservicio si está disponible
+              let currentY = y + 20;
               if (pedidoData.cliente && pedidoData.cliente.nombreSubServicio) {
-                doc
-                  .fontSize(10)
-                  .font("Helvetica-Bold")
-                  .text("Subservicio:", 50, currentY);
-                doc
-                  .font("Helvetica")
-                  .text(pedidoData.cliente.nombreSubServicio, 120, currentY, {
-                    width: 400,
-                    ellipsis: true,
-                  });
+                doc.fontSize(10).font('Helvetica-Bold').text('Subservicio:', colIzquierda, currentY);
+                doc.font('Helvetica').text(pedidoData.cliente.nombreSubServicio, colIzquierda + 70, currentY, { width: anchoTexto, ellipsis: true });
                 currentY += 20;
-              }
+              } 
               // Si no, intentar usar seccionDelServicio
-              else if (
-                pedidoData.seccionDelServicio &&
-                pedidoData.seccionDelServicio.trim() !== ""
-              ) {
-                doc
-                  .fontSize(10)
-                  .font("Helvetica-Bold")
-                  .text("Subservicio:", 50, currentY);
-                doc
-                  .font("Helvetica")
-                  .text(pedidoData.seccionDelServicio, 120, currentY, {
-                    width: 400,
-                    ellipsis: true,
-                  });
+              else if (pedidoData.seccionDelServicio && pedidoData.seccionDelServicio.trim() !== '' && pedidoData.seccionDelServicio !== 'Sin especificar') {
+                doc.fontSize(10).font('Helvetica-Bold').text('Subservicio:', colIzquierda, currentY);
+                doc.font('Helvetica').text(pedidoData.seccionDelServicio, colIzquierda + 70, currentY, { width: anchoTexto, ellipsis: true });
                 currentY += 20;
               }
-
+              
               // Agregar sububicación si está disponible
               if (pedidoData.cliente && pedidoData.cliente.nombreSubUbicacion) {
-                doc
-                  .fontSize(10)
-                  .font("Helvetica-Bold")
-                  .text("Ubicación:", 50, currentY);
-                doc
-                  .font("Helvetica")
-                  .text(pedidoData.cliente.nombreSubUbicacion, 120, currentY, {
-                    width: 400,
-                    ellipsis: true,
-                  });
+                doc.fontSize(10).font('Helvetica-Bold').text('Ubicación:', colIzquierda, currentY);
+                doc.font('Helvetica').text(pedidoData.cliente.nombreSubUbicacion, colIzquierda + 70, currentY, { width: anchoTexto, ellipsis: true });
                 currentY += 20;
               }
-
-              // Ya no mostramos el número de pedido aquí, ya que lo pusimos arriba a la derecha
-              // currentY se mantiene igual
-
+              
+              // COLUMNA DERECHA: Supervisor y Fecha de pedido
+              
+              // Obtener el nombre del supervisor - Mejorado para resolver desde el ID apropiadamente
+              let supervisorNombre = 'No especificado';
+              
+              // Primero verificamos si ya tenemos los datos del supervisor
+              if (supervisorData) {
+                if (supervisorData.nombre && supervisorData.apellido) {
+                  supervisorNombre = `${supervisorData.nombre} ${supervisorData.apellido}`;
+                } else if (supervisorData.usuario) {
+                  supervisorNombre = supervisorData.usuario;
+                }
+              } 
+              // Si no, intentamos extraer desde lo que venga en el pedido
+              else if (pedidoData.userId) {
+                if (typeof pedidoData.userId === 'object') {
+                  if (pedidoData.userId.usuario) {
+                    supervisorNombre = pedidoData.userId.usuario;
+                  } else if (pedidoData.userId.nombre) {
+                    supervisorNombre = pedidoData.userId.apellido ? 
+                      `${pedidoData.userId.nombre} ${pedidoData.userId.apellido}` :
+                      pedidoData.userId.nombre;
+                  }
+                } else {
+                  // Es solo un ID, se mostrará "No especificado"
+                  console.log("Solo se recibió ID de usuario:", pedidoData.userId);
+                }
+              }
+              
+              // Agregamos el supervisor y fecha en la columna derecha
+              doc.fontSize(10).font('Helvetica-Bold').text('Supervisor:', colDerecha, y);
+              doc.font('Helvetica').text(supervisorNombre, colDerecha + 70, y, { width: anchoTexto, ellipsis: true });
+              
               // Formatear fecha
-              let fechaFormateada = "Sin fecha";
+              let fechaFormateada = 'Sin fecha';
               try {
                 if (pedidoData.fecha) {
                   const fecha = new Date(pedidoData.fecha);
                   if (!isNaN(fecha.getTime())) {
-                    const meses = [
-                      "enero",
-                      "febrero",
-                      "marzo",
-                      "abril",
-                      "mayo",
-                      "junio",
-                      "julio",
-                      "agosto",
-                      "septiembre",
-                      "octubre",
-                      "noviembre",
-                      "diciembre",
-                    ];
-                    fechaFormateada = `${fecha.getDate()} de ${
-                      meses[fecha.getMonth()]
-                    } de ${fecha.getFullYear()}`;
+                    const meses = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+                    fechaFormateada = `${fecha.getDate()} de ${meses[fecha.getMonth()]} de ${fecha.getFullYear()}`;
                   }
                 }
               } catch (fechaError) {
-                console.error("Error al formatear fecha:", fechaError);
+                console.error('Error al formatear fecha:', fechaError);
               }
-
-              // Fecha de pedido
-              doc
-                .fontSize(10)
-                .font("Helvetica-Bold")
-                .text("Fecha de pedido:", 50, currentY);
-              doc
-                .font("Helvetica")
-                .text(fechaFormateada, 150, currentY, { width: 140 });
-              currentY += 30;
-
-              return currentY; // Devolver la posición Y actualizada después de toda la información
+              
+              // Fecha de pedido (en la columna derecha)
+              doc.fontSize(10).font('Helvetica-Bold').text('Fecha de pedido:', colDerecha, y + 20);
+              // Aumentamos el offset horizontal de 70 a 100
+              doc.font('Helvetica').text(fechaFormateada, colDerecha + 100, y + 20, { width: anchoTexto - 30 });
+              
+              // Devolver la posición Y más baja entre ambas columnas para continuar dibujando
+              return Math.max(currentY, y + 40);
             };
 
             // Función para agregar la cabecera de la tabla de productos
             const agregarCabeceraTabla = (posY) => {
               // Cabecera de tabla con color atractivo
               doc.lineWidth(1);
-              doc.fillColor("#3498db"); // Azul para cabecera
+              doc.fillColor('#3498db'); // Azul para cabecera
               doc.roundedRect(50, posY, 500, 30, 3).fill();
-
+              
               // Encabezados de columna con texto blanco
-              doc.fillColor("#FFFFFF");
-              doc.fontSize(11).font("Helvetica-Bold");
-              doc.text("Producto", 80, posY + 10);
-              doc.text("Cantidad", 400, posY + 10);
-
+              doc.fillColor('#FFFFFF');
+              doc.fontSize(11).font('Helvetica-Bold');
+              doc.text('Producto', 80, posY + 10);
+              doc.text('Cantidad', 400, posY + 10);
+              
               // Restablecer color de texto a negro
-              doc.fillColor("#000000").font("Helvetica");
+              doc.fillColor('#000000').font('Helvetica');
 
               return posY + 30; // Devolver la nueva posición Y
             };
@@ -340,130 +333,101 @@ const generarRemitoPDF = async (pedidoData, clienteData, productos) => {
               // Primera página - encabezado y datos simplificados
               agregarTitulo();
               let y = agregarInfoPedido();
-
+              
               // Agregar la cabecera de la tabla de productos
               y = agregarCabeceraTabla(y);
               console.log("Posición Y después de agregar cabecera:", y);
-
+              
               // IMPORTANTE: Comprobamos si hay productos para dibujar
               if (!productosExpandidos || productosExpandidos.length === 0) {
-                console.warn(
-                  "No hay productos para agregar al PDF o no es un array válido"
-                );
-                doc.text(
-                  "No hay productos disponibles para este pedido",
-                  80,
-                  y + 10
-                );
+                console.warn('No hay productos para agregar al PDF o no es un array válido');
+                doc.text('No hay productos disponibles para este pedido', 80, y + 10);
                 // Finalizar y retornar
                 finalizarDocumento();
                 return;
               }
-
+              
               // Variables para seguimiento
-              const PRODUCTOS_POR_PAGINA_PRIMERA = 10; // Productos en primera página
-              const PRODUCTOS_POR_PAGINA_RESTO = 20; // Productos en páginas siguientes
+              const PRODUCTOS_POR_PAGINA_PRIMERA = 12; // Aumentamos para aprovechar mejor el espacio
+              const PRODUCTOS_POR_PAGINA_RESTO = 25;   // Aumentamos para páginas siguientes
               let itemsEnPaginaActual = 0;
               let productosPorPagina = PRODUCTOS_POR_PAGINA_PRIMERA;
-
+              
               // Flag para asegurarnos de que al menos un producto se muestre en la primera página
               let alMenosUnProductoEnPrimeraPagina = false;
-
+              
               // Dibujar productos uno por uno
               for (let i = 0; i < productosExpandidos.length; i++) {
                 try {
                   const producto = productosExpandidos[i];
                   const cantidad = Number(producto.cantidad) || 0;
-
-                  console.log(
-                    `Dibujando producto #${i + 1}: ${
-                      producto.nombre || "Sin nombre"
-                    }, en Y=${y}, página=${paginaActual}`
-                  );
-
+                  
+                  console.log(`Dibujando producto #${i+1}: ${producto.nombre || "Sin nombre"}, en Y=${y}, página=${paginaActual}`);
+                  
                   // Calcular espacio necesario para mostrar al menos el producto principal
                   const alturaProducto = 30;
-
+                  
                   // Forzar a dibujar al menos un producto en la primera página
-                  const espacioDisponible =
-                    doc.page.height - doc.page.margins.bottom - y;
+                  const espacioDisponible = doc.page.height - doc.page.margins.bottom - y;
                   const espacioMinNecesario = alturaProducto;
-
+                  
                   // Si estamos en la primera página y aún no hemos dibujado ningún producto,
                   // intentamos mostrar al menos el producto principal
-                  const forzarProductoEnPrimeraPagina =
-                    paginaActual === 1 && itemsEnPaginaActual === 0;
-
+                  const forzarProductoEnPrimeraPagina = paginaActual === 1 && itemsEnPaginaActual === 0;
+                  
                   // Si no hay espacio suficiente PARA EL PRODUCTO PRINCIPAL o hemos alcanzado el límite de elementos por página
                   // Y no estamos forzando a mostrar al menos un producto en la primera página
-                  if (
-                    (espacioDisponible < espacioMinNecesario ||
-                      itemsEnPaginaActual >= productosPorPagina) &&
-                    !forzarProductoEnPrimeraPagina
-                  ) {
-                    console.log(
-                      "Creando nueva página. Espacio disponible:",
-                      espacioDisponible,
-                      "Espacio necesario mínimo:",
-                      espacioMinNecesario,
-                      "Items en página:",
-                      itemsEnPaginaActual
-                    );
-
+                  if ((espacioDisponible < espacioMinNecesario || itemsEnPaginaActual >= productosPorPagina) && 
+                      !forzarProductoEnPrimeraPagina) {
+                  
+                    console.log("Creando nueva página. Espacio disponible:", espacioDisponible, 
+                                "Espacio necesario mínimo:", espacioMinNecesario,
+                                "Items en página:", itemsEnPaginaActual);
+                    
                     // Crear nueva página
                     doc.addPage();
                     paginas++;
                     paginaActual++;
-
+                    
                     // Agregar título y cabecera en la nueva página
                     agregarTitulo();
                     y = agregarCabeceraTabla(120);
-
+                    
                     // Resetear contador de elementos en la página
                     itemsEnPaginaActual = 0;
                     productosPorPagina = PRODUCTOS_POR_PAGINA_RESTO;
                   }
-
+                  
                   // Dibujar fondo para este producto (alternar colores)
-                  const colorFondo = producto.esCombo
-                    ? "#e3f2fd"
-                    : i % 2 === 0
-                    ? "#F5F5F5"
-                    : "#FFFFFF";
+                  const colorFondo = producto.esCombo ? '#e3f2fd' : (i % 2 === 0 ? '#F5F5F5' : '#FFFFFF');
                   doc.fillColor(colorFondo).rect(50, y, 500, 30).fill();
-
+                  
                   // Dibujar datos del producto
-                  doc.fillColor(producto.esCombo ? "#2c3e50" : "#000000");
-
+                  doc.fillColor(producto.esCombo ? '#2c3e50' : '#000000');
+                  
                   if (producto.esCombo) {
-                    doc.font("Helvetica-Bold");
+                    doc.font('Helvetica-Bold');
                   }
-
-                  const nombre = producto.nombre || "Producto sin nombre";
+                  
+                  const nombre = producto.nombre || 'Producto sin nombre';
                   doc.text(nombre, 80, y + 10, { width: 300 });
                   doc.text(cantidad.toString(), 400, y + 10);
-
+                  
                   // Restaurar estilo normal
-                  doc.font("Helvetica");
-
+                  doc.font('Helvetica');
+                  
                   // Incrementar posición Y y contador
                   y += 30;
                   itemsEnPaginaActual++;
-
+                  
                   // Marcar que ya tenemos al menos un producto en la primera página
                   if (paginaActual === 1) {
                     alMenosUnProductoEnPrimeraPagina = true;
-                    console.log(
-                      "Producto principal dibujado en la primera página"
-                    );
+                    console.log("Producto principal dibujado en la primera página");
                   }
-
+                  
                   // Si es un combo, dibujar sus componentes
-                  if (
-                    producto.esCombo &&
-                    producto.componentes &&
-                    producto.componentes.length > 0
-                  ) {
+                  if (producto.esCombo && producto.componentes && producto.componentes.length > 0) {
                     for (const componente of producto.componentes) {
                       // Verificar si necesitamos nueva página para este componente
                       if (y + 25 > doc.page.height - doc.page.margins.bottom) {
@@ -471,62 +435,75 @@ const generarRemitoPDF = async (pedidoData, clienteData, productos) => {
                         doc.addPage();
                         paginas++;
                         paginaActual++;
-
+                        
                         agregarTitulo();
                         y = agregarCabeceraTabla(120);
-
+                        
                         itemsEnPaginaActual = 0;
                       }
-
+                      
                       // Dibujar componente
-                      doc.fillColor("#FFFFFF").rect(50, y, 500, 25).fill();
-                      doc.fillColor("#666666").fontSize(9);
-                      doc.text(`- ${componente.nombre}`, 100, y + 8, {
-                        width: 280,
-                      });
+                      doc.fillColor('#FFFFFF').rect(50, y, 500, 25).fill();
+                      doc.fillColor('#666666').fontSize(9);
+                      doc.text(`- ${componente.nombre}`, 100, y + 8, { width: 280 });
                       doc.text(componente.cantidad.toString(), 400, y + 8);
-                      doc.fontSize(10).fillColor("#000000");
-
+                      doc.fontSize(10).fillColor('#000000');
+                      
                       y += 25;
                       itemsEnPaginaActual++;
                     }
                   }
+                  
                 } catch (error) {
-                  console.error(`Error al dibujar producto #${i + 1}:`, error);
+                  console.error(`Error al dibujar producto #${i+1}:`, error);
                   // Continuar con el siguiente producto
                 }
               }
-
-              // Sección para firmas simplificadas
-              if (y + 100 > doc.page.height - doc.page.margins.bottom) {
+              
+              // Sección para firmas y detalle
+              if (y + 200 > doc.page.height - doc.page.margins.bottom) {
                 // No hay espacio para firmas, crear nueva página
                 doc.addPage();
                 paginas++;
                 y = 150;
               }
-
+              
               // Dibujar líneas para firmas
               y += 50;
               doc.moveTo(100, y).lineTo(250, y).stroke();
               doc.moveTo(350, y).lineTo(500, y).stroke();
-
+              
               // Cambiar nombres de firmas a Supervisor/Operario
-              doc.text("Firma de Supervisor", 130, y + 10);
-              doc.text("Firma de Operario", 390, y + 10);
-
+              doc.text('Firma de Supervisor', 130, y + 10);
+              doc.text('Firma de Operario', 390, y + 10);
+              
+              // Agregar detalle si existe
+              y += 50;
+              doc.font('Helvetica-Bold').text('Detalle:', 50, y);
+              doc.font('Helvetica');
+              
+              // Obtener detalle del pedido, con manejo de posibles undefined
+              const detalle = pedidoData.detalle || 'Sin detalle';
+              
+              // Dibujar detalle con ajuste de texto
+              doc.text(detalle, 50, y + 20, {
+                width: 500,
+                align: 'left'
+              });
+              
               // Actualizar total de páginas
               totalPaginas = paginas;
-
+              
               // Numerar páginas
               for (let i = 0; i < totalPaginas; i++) {
                 doc.switchToPage(i);
-                doc.text(`Página ${i + 1} de ${totalPaginas}`, 450, 50);
+                doc.text(`Página ${i+1} de ${totalPaginas}`, 450, 50);
               }
-
+              
               // Finalizar documento
               finalizarDocumento();
             };
-
+            
             // Función para finalizar el documento de forma segura
             const finalizarDocumento = () => {
               try {
@@ -539,26 +516,26 @@ const generarRemitoPDF = async (pedidoData, clienteData, productos) => {
                 if (currentBuffer.length > 0) {
                   resolve(currentBuffer);
                 } else {
-                  reject(
-                    new Error("No se pudo generar el PDF: " + error.message)
-                  );
+                  reject(new Error('No se pudo generar el PDF: ' + error.message));
                 }
               }
             };
-
+            
             // Ejecutar la función principal
             dibujarPDF();
+            
           } catch (documentError) {
             console.error("Error en la creación del documento:", documentError);
             reject(documentError);
           }
         })
-        .catch((error) => {
-          console.error("Error al procesar productos:", error);
+        .catch(error => {
+          console.error('Error al procesar productos:', error);
           reject(error);
         });
+
     } catch (error) {
-      console.error("Error en generarRemitoPDF:", error);
+      console.error('Error en generarRemitoPDF:', error);
       reject(error);
     }
   });

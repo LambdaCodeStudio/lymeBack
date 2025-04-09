@@ -900,3 +900,48 @@ exports.aprobarPedidoFinal = async (req, res) => {
 
 // Para mantener compatibilidad con código existente, redireccionar aprobarPedido a aprobarPedidoFinal
 exports.aprobarPedido = exports.aprobarPedidoFinal;
+
+/**
+ * Obtiene pedidos por ID de supervisor y rango de fechas
+ */
+exports.getPedidosBySupervisorIdAndDateRange = async (req, res) => {
+    try {
+        // Validar que el ID sea un ObjectId válido
+        if (!mongoose.Types.ObjectId.isValid(req.params.supervisorId)) {
+            return res.status(400).json({ mensaje: 'ID de supervisor inválido' });
+        }
+
+        const { fechaInicio, fechaFin, desde, hasta } = req.query;
+        
+        // Admitir ambos formatos de parámetros
+        const fechaDesde = fechaInicio || desde;
+        const fechaHasta = fechaFin || hasta;
+        
+        if (!fechaDesde || !fechaHasta) {
+            return res.status(400).json({ 
+                mensaje: 'Se requieren los parámetros de fecha (fechaInicio/desde y fechaFin/hasta)' 
+            });
+        }
+
+        // Configurar opciones de paginación y ordenamiento
+        const opciones = {
+            limit: req.query.limit ? parseInt(req.query.limit) : 50,
+            skip: req.query.page ? (parseInt(req.query.page) - 1) * (parseInt(req.query.limit) || 50) : 0,
+            sort: { fecha: -1 }
+        };
+
+        const pedidos = await pedidoLogic.obtenerPedidosPorSupervisorIdYRangoDeFechas(
+            req.params.supervisorId, 
+            fechaDesde, 
+            fechaHasta, 
+            opciones
+        );
+        res.json(pedidos);
+    } catch (error) {
+        console.error('Error al obtener pedidos por supervisor y fecha:', error);
+        res.status(500).json({ 
+            mensaje: 'Error al obtener pedidos por supervisor y fecha', 
+            error: error.message 
+        });
+    }
+};

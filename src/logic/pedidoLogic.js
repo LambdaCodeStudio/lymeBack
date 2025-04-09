@@ -1002,6 +1002,56 @@ const aprobarPedidoFinal = async (id, userId) => {
     return pedido;
 };
 
+/**
+ * Obtiene pedidos por ID de supervisor y rango de fechas
+ */
+const obtenerPedidosPorSupervisorIdYRangoDeFechas = async (supervisorId, fechaInicio, fechaFin, opciones = {}) => {
+    const { limit = 50, skip = 0, sort = { fecha: -1 } } = opciones;
+    
+    // Procesar fechas en formato dd/mm/aaaa o ISO
+    const fechaInicioObj = procesarFecha(fechaInicio, true); // Inicio del día
+    const fechaFinObj = procesarFecha(fechaFin, false); // Fin del día
+
+    // Primero encontrar todos los subServicios donde este usuario es supervisor
+    const Cliente = mongoose.model('Cliente');
+    const clientesDelSupervisor = await Cliente.find({ 
+        'subServicios.supervisorId': new mongoose.Types.ObjectId(supervisorId) 
+    }).select('_id subServicios');
+    
+    // Extraer los IDs de subServicios donde este usuario es supervisor
+    const subServiciosIds = [];
+    
+    clientesDelSupervisor.forEach(cliente => {
+        cliente.subServicios.forEach(subServ => {
+            if (subServ.supervisorId && 
+                subServ.supervisorId.toString() === supervisorId.toString()) {
+                subServiciosIds.push(subServ._id);
+            }
+        });
+    });
+    
+    // Buscar pedidos donde:
+    // 1. El supervisor está asignado directamente al pedido, O
+    // 2. El pedido tiene un subServicio donde el usuario es supervisor
+    // Y que estén dentro del rango de fechas
+    return await Pedido.find({
+        $or: [
+            { supervisorId: new mongoose.Types.ObjectId(supervisorId) },
+            { 'cliente.subServicioId': { $in: subServiciosIds } }
+        ],
+        fecha: { $gte: fechaInicioObj, $lte: fechaFinObj }
+    })
+    .populate('userId', 'nombre email usuario apellido role')
+    .populate('supervisorId', 'nombre email usuario apellido role')
+    .populate('productos.productoId')
+    .populate('cliente.clienteId', 'nombre email telefono')
+    .sort(sort)
+    .skip(skip)
+    .limit(limit);
+};
+
+
+
 module.exports = {
     obtenerPedidos,
     obtenerPedidoPorId,
@@ -1024,5 +1074,6 @@ module.exports = {
     aprobarPedidoPorSupervisor,
     marcarPedidoEnPreparacion,
     marcarPedidoEntregado,
-    aprobarPedidoFinal
+    aprobarPedidoFinal,
+    obtenerPedidosPorSupervisorIdYRangoDeFechas
 };
