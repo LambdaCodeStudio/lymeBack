@@ -320,11 +320,24 @@ const crearPedido = async (data) => {
             }
         }
         
-        // Creamos el pedido con los datos potencialmente modificados
-        // IMPORTANTE: Todos los pedidos ahora comienzan como 'pendiente', independientemente
-        // de si son creados por operarios o supervisores
+        // Solo asignamos el estado si no viene explícitamente
         if (!data.estado) {
-            data.estado = 'pendiente';
+            const User = mongoose.model('User');
+            const usuario = await User.findById(data.userId);
+            
+            if (usuario && usuario.role === 'supervisor') {
+                data.estado = 'aprobado_supervisor';
+                // Si no viene la fecha de aprobación, la asignamos
+                if (!data.fechaAprobacionSupervisor) {
+                    data.fechaAprobacionSupervisor = new Date();
+                }
+                // Si no viene el ID de quien aprobó, usamos el mismo usuario
+                if (!data.aprobadoPorSupervisor) {
+                    data.aprobadoPorSupervisor = data.userId;
+                }
+            } else {
+                data.estado = 'pendiente';
+            }
         }
         
         const nuevoPedido = new Pedido(data);

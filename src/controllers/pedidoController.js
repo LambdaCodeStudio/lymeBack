@@ -4,6 +4,43 @@ const pedidoLogic = require('../logic/pedidoLogic');
 const mongoose = require('mongoose');
 
 /**
+ * Función utilitaria para extraer el ID del usuario de múltiples fuentes
+ * @param {Object} req - Objeto de solicitud Express
+ * @returns {string|null} - ID del usuario o null si no se encontró
+ */
+const extractUserId = (req) => {
+    let userId = null;
+    
+    // 1. Intentar obtener del objeto req.user estándar
+    if (req.user) {
+      userId = req.user.id || req.user._id;
+      console.log("ID obtenido de req.user:", userId);
+    }
+    
+    // 2. Si no está disponible, intentar extraerlo manualmente del token
+    if (!userId && req.headers.authorization) {
+      try {
+        const token = req.headers.authorization.split(' ')[1];
+        // Esta línea asume que la verificación del token ya fue hecha por un middleware
+        const decoded = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
+        userId = decoded.id || decoded.sub;
+        console.log("ID extraído manualmente del token:", userId);
+      } catch (tokenError) {
+        console.error("Error al extraer ID del token:", tokenError);
+      }
+    }
+    
+    // 3. Si aun no hay userId, intentar obtenerlo del cuerpo de la solicitud como último recurso
+    if (!userId && req.body && req.body.userId) {
+      userId = req.body.userId;
+      console.log("ID obtenido del cuerpo de la solicitud:", userId);
+    }
+    
+    return userId;
+  };
+  
+
+/**
  * Obtiene todos los pedidos
  */
 exports.getPedidos = async (req, res) => {
@@ -410,8 +447,16 @@ exports.createPedido = async (req, res) => {
             }
         }
 
-        // IMPORTANTE: Todos los pedidos ahora comienzan como pendientes
-        req.body.estado = 'pendiente';
+        // Estado según el rol del usuario
+        if (req.user && req.user.role === 'supervisor') {
+            req.body.estado = 'aprobado_supervisor';
+            // Si estamos asignando el pedido como aprobado_supervisor directamente,
+            // guardamos quién lo aprobó
+            req.body.aprobadoPorSupervisor = req.user.id;
+            req.body.fechaAprobacionSupervisor = new Date();
+        } else {
+            req.body.estado = 'pendiente';
+        }
 
         // Crear el pedido
         const pedido = await pedidoLogic.crearPedido(req.body);
@@ -564,8 +609,9 @@ exports.rechazarPedido = async (req, res) => {
         }
 
         const pedidoId = req.params.id;
-        const userId = req.user ? req.user.id : null;
-        const { motivo } = req.body;
+        
+        // Usar la función utilitaria para extraer el ID del usuario
+        const userId = extractUserId(req);
 
         // Verificar si hay un usuario autenticado
         if (!userId) {
@@ -591,8 +637,8 @@ exports.rechazarPedido = async (req, res) => {
         const pedidoActualizado = await pedidoLogic.rechazarPedido(pedidoId, userId);
         
         // Actualizar las observaciones con el motivo si se proporcionó
-        if (motivo) {
-            pedidoActualizado.observaciones = motivo;
+        if (req.body.motivo) {
+            pedidoActualizado.observaciones = req.body.motivo;
             await pedidoActualizado.save();
         }
         
@@ -689,10 +735,13 @@ exports.aprobarPedidoPorSupervisor = async (req, res) => {
         }
 
         const pedidoId = req.params.id;
-        const userId = req.user ? req.user.id : null;
-
-        // Verificar si hay un usuario autenticado
+        
+        // Usar la función utilitaria para extraer el ID del usuario
+        const userId = extractUserId(req);
+        
+        // Verificación final
         if (!userId) {
+            console.error("No se pudo obtener el ID de usuario de ninguna fuente");
             return res.status(401).json({ mensaje: 'Usuario no autenticado' });
         }
 
@@ -702,16 +751,25 @@ exports.aprobarPedidoPorSupervisor = async (req, res) => {
             return res.status(404).json({ mensaje: 'Pedido no encontrado' });
         }
 
-        // Solo aprobar por supervisor si está pendiente
+        // Solo se pueden aprobar pedidos pendientes
         if (pedidoActual.estado !== 'pendiente') {
             return res.status(400).json({ 
-                mensaje: 'Solo se pueden aprobar por supervisor pedidos pendientes' 
+                mensaje: 'Solo se pueden aprobar por supervisor pedidos en estado pendiente' 
             });
         }
 
-        // Aprobar el pedido por supervisor
-        const pedidoActualizado = await pedidoLogic.aprobarPedidoPorSupervisor(pedidoId, userId);
+        // Actualizar el estado del pedido
+        pedidoActual.estado = 'aprobado_supervisor';
+        pedidoActual.fechaAprobacionSupervisor = new Date();
+        pedidoActual.aprobadoPorSupervisor = userId;
         
+        // Si hay comentarios adicionales, guardarlos
+        if (req.body.comentarios) {
+            pedidoActual.observaciones = `Aprobado por supervisor: ${req.body.comentarios}`;
+        }
+        
+        await pedidoActual.save();
+
         // Obtener el pedido aprobado con información completa
         const pedidoAprobado = await Pedido.findById(pedidoId)
             .populate('userId', 'nombre email usuario apellido role')
@@ -744,11 +802,20 @@ exports.marcarPedidoEnPreparacion = async (req, res) => {
         }
 
         const pedidoId = req.params.id;
-        const userId = req.user ? req.user.id : null;
+        
+        // Usar la función utilitaria para extraer el ID del usuario
+        const userId = extractUserId(req);
 
         // Verificar si hay un usuario autenticado
         if (!userId) {
             return res.status(401).json({ mensaje: 'Usuario no autenticado' });
+        }
+
+        // Verificar que el usuario no sea supervisor
+        if (req.user && req.user.role === 'supervisor') {
+            return res.status(403).json({ 
+                mensaje: 'Los supervisores no están autorizados para marcar pedidos como en preparación' 
+            });
         }
 
         // Obtener el pedido actual
@@ -799,7 +866,9 @@ exports.marcarPedidoEntregado = async (req, res) => {
         }
 
         const pedidoId = req.params.id;
-        const userId = req.user ? req.user.id : null;
+        
+        // Usar la función utilitaria para extraer el ID del usuario
+        const userId = extractUserId(req);
 
         // Verificar si hay un usuario autenticado
         if (!userId) {
@@ -854,7 +923,9 @@ exports.aprobarPedidoFinal = async (req, res) => {
         }
 
         const pedidoId = req.params.id;
-        const userId = req.user ? req.user.id : null;
+        
+        // Usar la función utilitaria para extraer el ID del usuario
+        const userId = extractUserId(req);
 
         // Verificar si hay un usuario autenticado
         if (!userId) {
