@@ -92,8 +92,8 @@ const productoSchema = new mongoose.Schema({
     type: String, 
     required: true, 
     enum: ['accesorios', 'aerosoles', 'bolsas', 'estandar', 'indumentaria', 'liquidos', 'papeles',
-           'sinClasificarLimpieza', 'iluminaria', 'electricidad', 'cerraduraCortina', 'pintura',
-           'superficiesConstruccion', 'plomeria', 'calzado'] 
+           'sinClasificarLimpieza', 'sinClasificarMantenimiento', 'iluminaria', 'electricidad', 'cerraduraCortina', 'pintura',
+           'superficiesConstruccion', 'plomeria', 'calzado', 'insumosMaquinaria', 'desinfeccion', 'accesoriosMaquinarias'] 
   },
   marca: {
     type: String,
