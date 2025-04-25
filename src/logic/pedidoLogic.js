@@ -344,6 +344,9 @@ const crearPedido = async (data) => {
         if (data.productos && Array.isArray(data.productos)) {
             // Array para procesar productos en paralelo
             const productPromises = data.productos.map(async (producto) => {
+                // Guardar el precio original enviado desde el frontend
+                const precioOriginalEnviado = producto.precio;
+                
                 // Obtener información completa del producto/combo
                 const productoInfo = await productoLogic.obtenerPorId(producto.productoId);
                 
@@ -353,7 +356,22 @@ const crearPedido = async (data) => {
                 
                 // Completar campos básicos del producto con la información actual
                 producto.nombre = productoInfo.nombre;
-                producto.precio = productoInfo.precio;
+                
+                // MODIFICACIÓN CLAVE: No sobrescribir el precio para combos personalizados
+                const esComboPersonalizado = productoInfo.esCombo && 
+                                           (producto.personalizado === true || 
+                                            producto.esComboEditado === true);
+                
+                if (!esComboPersonalizado) {
+                    // Solo usar el precio de la base de datos para productos normales y combos no modificados
+                    producto.precio = productoInfo.precio;
+                } else {
+                    // Para combos personalizados, mantener el precio calculado en el frontend
+                    console.log(`Respetando precio personalizado para combo: "${producto.nombre}"`);
+                    console.log(`  - Precio original BD: ${productoInfo.precio}`);
+                    console.log(`  - Precio calculado frontend: ${precioOriginalEnviado}`);
+                }
+                
                 producto.categoria = productoInfo.categoria;
                 producto.subCategoria = productoInfo.subCategoria;
                 
@@ -371,9 +389,9 @@ const crearPedido = async (data) => {
                                 const itemInfo = await productoLogic.obtenerPorId(comboItem.productoId);
                                 return {
                                     productoId: comboItem.productoId,
-                                    nombre: itemInfo ? itemInfo.nombre : 'Producto no encontrado',
+                                    nombre: itemInfo ? itemInfo.nombre : comboItem.nombre || 'Producto no encontrado',
                                     cantidad: comboItem.cantidad || 1,
-                                    precio: itemInfo ? itemInfo.precio : 0
+                                    precio: comboItem.precio || (itemInfo ? itemInfo.precio : 0)
                                 };
                             } catch (err) {
                                 console.warn(`Error al obtener información del producto ${comboItem.productoId} en combo:`, err);
@@ -381,13 +399,20 @@ const crearPedido = async (data) => {
                                     productoId: comboItem.productoId,
                                     nombre: comboItem.nombre || 'Producto no encontrado',
                                     cantidad: comboItem.cantidad || 1,
-                                    precio: 0
+                                    precio: comboItem.precio || 0
                                 };
                             }
                         });
                         
                         // Esperar a que se completen todas las consultas
                         producto.comboItems = await Promise.all(comboItemsPromises);
+                        
+                        // Verificación final: calcular suma de componentes para debug
+                        const sumaPreciosComponentes = producto.comboItems.reduce((suma, item) => {
+                            return suma + (item.precio * item.cantidad);
+                        }, 0);
+                        
+                        console.log(`  - Suma precios componentes: ${sumaPreciosComponentes}`);
                     } 
                     // Si es un combo estándar (no modificado)
                     else {

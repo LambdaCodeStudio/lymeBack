@@ -14,20 +14,18 @@ const mongoose = require("mongoose");
 const generarRemitoPDF = async (pedidoData, clienteData, productos) => {
   return new Promise((resolve, reject) => {
     try {
-      console.log("Iniciando generación de PDF...");
-
       // Validar datos de entrada
       if (!pedidoData) {
         throw new Error("Datos de pedido requeridos");
       }
 
-      console.log("Datos de pedido recibidos:", JSON.stringify(pedidoData));
-      console.log("Cantidad de productos:", productos ? productos.length : 0);
-
       if (!Array.isArray(productos)) {
         console.error("Productos no es un array, es:", typeof productos);
         throw new Error("La lista de productos debe ser un array");
       }
+
+      // IMPORTANTE: Agregar este log para analizar la estructura de productos
+      console.log("ESTRUCTURA DE PRODUCTOS RECIBIDA:", JSON.stringify(productos, null, 2));
 
       // Función para obtener el supervisor desde su ID (usando userId)
       const obtenerSupervisorData = async (userId) => {
@@ -51,118 +49,67 @@ const generarRemitoPDF = async (pedidoData, clienteData, productos) => {
       const procesarProductos = async (productos) => {
         try {
           const productosExpandidos = [];
-          const Producto = mongoose.model("Producto");
-          
-          // NUEVO: Verificar si hay productos personalizados (combos editados) en metadata
-          const productosPersonalizados = pedidoData?.metadata?.productosPersonalizados || [];
-          
-          // Crear un mapa para búsqueda rápida por ID
-          const personalizadosPorId = {};
-          productosPersonalizados.forEach(prod => {
-            if (prod.productoId) {
-              const id = typeof prod.productoId === 'object' 
-                ? prod.productoId.toString() 
-                : prod.productoId.toString();
-              personalizadosPorId[id] = prod;
-            }
-          });
 
+          // Importante: No agrupar productos idénticos
           for (const producto of productos) {
-            // Obtener el ID del producto para comprobar personalizaciones
-            const productoId = typeof producto.productoId === 'object' 
-              ? producto.productoId._id.toString() 
-              : producto.productoId.toString();
+            // Verificar si es combo explícitamente (ahora también usando la propiedad directa esCombo)
+            const esCombo = !!(producto.esCombo === true || 
+                            (producto.productoId && producto.productoId.esCombo === true));
             
-            // Verificar si este producto tiene una versión personalizada (combo editado)
-            const personalizado = personalizadosPorId[productoId];
-            
-            if (personalizado) {
-              // Usar la versión personalizada del combo
-              console.log(`Procesando combo personalizado: ${producto.nombre || personalizado.nombre}`);
-              
-              const productoObj = {
-                ...producto,
-                nombre: personalizado.nombre || producto.nombre,
-                esCombo: true,
-                componentes: []
-              };
-              
-              productosExpandidos.push(productoObj);
-              
-              // Procesar los componentes del combo personalizado
-              if (personalizado.comboItems && Array.isArray(personalizado.comboItems)) {
-                console.log(`Combo personalizado con ${personalizado.comboItems.length} componentes`);
-                
-                for (const item of personalizado.comboItems) {
-                  try {
-                    productoObj.componentes.push({
-                      nombre: item.nombre,
-                      cantidad: item.cantidad * producto.cantidad // Multiplicar por la cantidad del combo
-                    });
-                  } catch (error) {
-                    console.error('Error al procesar componente de combo personalizado:', error);
-                  }
+            // Verificar si el combo está personalizado
+            const personalizado = !!producto.personalizado;
+
+            const productoObj = {
+              ...producto,
+              nombre: producto.nombre || (producto.productoId && producto.productoId.nombre) || "Producto sin nombre",
+              esCombo: esCombo,
+              personalizado: personalizado,
+              componentes: [],
+            };
+
+            // Agregar el producto al array (sin agrupar)
+            productosExpandidos.push(productoObj);
+
+            // Si es un combo, procesamos sus componentes
+            if (esCombo) {
+              // CASO 1: Si es un combo personalizado, usar comboItems directamente
+              if (personalizado && producto.comboItems && Array.isArray(producto.comboItems)) {
+                console.log(`Usando comboItems personalizados para ${producto.nombre}`);
+                for (const item of producto.comboItems) {
+                  productoObj.componentes.push({
+                    nombre: item.nombre || "Componente sin nombre",
+                    cantidad: item.cantidad * producto.cantidad, // Multiplicar por la cantidad del combo
+                  });
                 }
-              }
-            } else {
-              // Procesamiento estándar para productos normales y combos no editados
-              const productoObj = {
-                ...producto,
-                esCombo: producto.productoId && producto.productoId.esCombo === true,
-                componentes: [],
-              };
-
-              productosExpandidos.push(productoObj);
-
-              // Si es un combo, obtener sus componentes
-              if (
-                productoObj.esCombo &&
+              } 
+              // CASO 2: Si no está personalizado pero tiene comboItems
+              else if (!personalizado && producto.comboItems && Array.isArray(producto.comboItems)) {
+                console.log(`Usando comboItems estándar para ${producto.nombre}`);
+                for (const item of producto.comboItems) {
+                  productoObj.componentes.push({
+                    nombre: item.nombre || "Componente sin nombre",
+                    cantidad: item.cantidad * producto.cantidad, // Multiplicar por la cantidad del combo
+                  });
+                }
+              } 
+              // CASO 3: Si no tiene comboItems pero tiene la estructura original itemsCombo
+              else if (
                 producto.productoId &&
                 producto.productoId.itemsCombo &&
                 Array.isArray(producto.productoId.itemsCombo)
               ) {
-                console.log(
-                  `Procesando combo: ${producto.nombre} con ${producto.productoId.itemsCombo.length} componentes`
-                );
-
-                // Para cada componente del combo, obtener sus detalles
+                console.log(`Usando itemsCombo para ${producto.nombre}`);
                 for (const item of producto.productoId.itemsCombo) {
-                  try {
-                    if (!item.productoId) continue;
-
-                    // Si el componente ya está poblado
-                    if (
-                      typeof item.productoId === "object" &&
-                      item.productoId.nombre
-                    ) {
-                      productoObj.componentes.push({
-                        nombre: item.productoId.nombre,
-                        cantidad: item.cantidad * producto.cantidad, // Multiplicar por la cantidad del combo
-                      });
-                    } else {
-                      // Si necesitamos poblar el componente
-                      const id =
-                        typeof item.productoId === "object"
-                          ? item.productoId._id
-                          : item.productoId;
-                      const componenteProducto = await Producto.findById(
-                        id
-                      ).select("nombre");
-
-                      if (componenteProducto) {
-                        productoObj.componentes.push({
-                          nombre: componenteProducto.nombre,
-                          cantidad: item.cantidad * producto.cantidad, // Multiplicar por la cantidad del combo
-                        });
-                      }
-                    }
-                  } catch (compError) {
-                    console.error(
-                      `Error al procesar componente de combo:`,
-                      compError
-                    );
-                    // Continuar con el siguiente componente
-                  }
+                  // Ya no consultamos la DB, usamos solo la información disponible
+                  const nombreComponente = 
+                    (item.nombre) ? item.nombre :
+                    (item.productoId && typeof item.productoId === "object" && item.productoId.nombre) ? 
+                    item.productoId.nombre : "Componente sin nombre";
+                  
+                  productoObj.componentes.push({
+                    nombre: nombreComponente,
+                    cantidad: item.cantidad * producto.cantidad, // Multiplicar por la cantidad del combo
+                  });
                 }
               }
             }
@@ -182,16 +129,11 @@ const generarRemitoPDF = async (pedidoData, clienteData, productos) => {
         obtenerSupervisorData(pedidoData.userId)
           .then(supervisor => {
             supervisorData = supervisor;
-            console.log("Supervisor obtenido:", supervisorData);
           })
           .catch(error => {
             console.error("Error al obtener supervisor:", error);
           });
       }
-
-      console.log(
-        `Iniciando generación de PDF con ${productos.length} productos`
-      );
 
       // Procesar productos y expandir combos
       procesarProductos(productos)
@@ -215,7 +157,6 @@ const generarRemitoPDF = async (pedidoData, clienteData, productos) => {
             doc.on("data", buffers.push.bind(buffers));
             doc.on("end", () => {
               const pdfData = Buffer.concat(buffers);
-              console.log("PDF generado exitosamente, tamaño:", pdfData.length);
               resolve(pdfData);
             });
 
@@ -239,8 +180,6 @@ const generarRemitoPDF = async (pedidoData, clienteData, productos) => {
               try {
                 if (fs.existsSync(logoPath)) {
                   doc.image(logoPath, 30, 30, { width: 120 }); // Reducido de 150 a 120
-                } else {
-                  console.warn("Logo no encontrado en:", logoPath);
                 }
               } catch (logoError) {
                 console.error("Error al agregar logo:", logoError);
@@ -267,11 +206,11 @@ const generarRemitoPDF = async (pedidoData, clienteData, productos) => {
               // COLUMNA IZQUIERDA: Cliente y Subservicio
               
               // Cliente - Acceder correctamente a la estructura
-              doc.fontSize(8).font('Helvetica-Bold').text('Cliente:', colIzquierda, y); // Reducido tamaño
+              doc.fontSize(10).font('Helvetica-Bold').text('Cliente:', colIzquierda, y); // Aumentado de 9 a 10
               
               // Primero intentamos acceder a cliente.nombreCliente (estructura nueva)
               if (pedidoData.cliente && pedidoData.cliente.nombreCliente) {
-                doc.font('Helvetica').text(pedidoData.cliente.nombreCliente, colIzquierda + 50, y, { width: anchoTexto, ellipsis: true }); // Offset reducido
+                doc.fontSize(10).font('Helvetica').text(pedidoData.cliente.nombreCliente, colIzquierda + 65, y, { width: anchoTexto - 15, ellipsis: true }); // Offset aumentado para evitar pisado
               } 
               // Si no está disponible, usamos el campo servicio (estructura antigua)
               else if (pedidoData.servicio) {
@@ -279,29 +218,29 @@ const generarRemitoPDF = async (pedidoData, clienteData, productos) => {
                 const servicioText = Array.isArray(pedidoData.servicio) 
                   ? pedidoData.servicio.join(', ') 
                   : pedidoData.servicio;
-                doc.font('Helvetica').text(servicioText || 'No especificado', colIzquierda + 50, y, { width: anchoTexto, ellipsis: true });
+                doc.fontSize(10).font('Helvetica').text(servicioText || 'No especificado', colIzquierda + 65, y, { width: anchoTexto - 15, ellipsis: true });
               } else {
-                doc.font('Helvetica').text('No especificado', colIzquierda + 50, y, { width: anchoTexto });
+                doc.fontSize(10).font('Helvetica').text('No especificado', colIzquierda + 65, y, { width: anchoTexto - 15 });
               }
               
               // Agregar subservicio si está disponible
               let currentY = y + 15; // Reducido espacio vertical
               if (pedidoData.cliente && pedidoData.cliente.nombreSubServicio) {
-                doc.fontSize(8).font('Helvetica-Bold').text('Subservicio:', colIzquierda, currentY);
-                doc.font('Helvetica').text(pedidoData.cliente.nombreSubServicio, colIzquierda + 50, currentY, { width: anchoTexto, ellipsis: true });
+                doc.fontSize(10).font('Helvetica-Bold').text('Subservicio:', colIzquierda, currentY); // Aumentado de 9 a 10
+                doc.fontSize(10).font('Helvetica').text(pedidoData.cliente.nombreSubServicio, colIzquierda + 65, currentY, { width: anchoTexto - 15, ellipsis: true });
                 currentY += 15; // Reducido espacio vertical
               } 
               // Si no, intentar usar seccionDelServicio
               else if (pedidoData.seccionDelServicio && pedidoData.seccionDelServicio.trim() !== '' && pedidoData.seccionDelServicio !== 'Sin especificar') {
-                doc.fontSize(8).font('Helvetica-Bold').text('Subservicio:', colIzquierda, currentY);
-                doc.font('Helvetica').text(pedidoData.seccionDelServicio, colIzquierda + 50, currentY, { width: anchoTexto, ellipsis: true });
+                doc.fontSize(10).font('Helvetica-Bold').text('Subservicio:', colIzquierda, currentY); // Aumentado de 9 a 10
+                doc.fontSize(10).font('Helvetica').text(pedidoData.seccionDelServicio, colIzquierda + 65, currentY, { width: anchoTexto - 15, ellipsis: true });
                 currentY += 15; // Reducido espacio vertical
               }
               
               // Agregar sububicación si está disponible
               if (pedidoData.cliente && pedidoData.cliente.nombreSubUbicacion) {
-                doc.fontSize(8).font('Helvetica-Bold').text('Ubicación:', colIzquierda, currentY);
-                doc.font('Helvetica').text(pedidoData.cliente.nombreSubUbicacion, colIzquierda + 50, currentY, { width: anchoTexto, ellipsis: true });
+                doc.fontSize(10).font('Helvetica-Bold').text('Ubicación:', colIzquierda, currentY); // Aumentado de 9 a 10
+                doc.fontSize(10).font('Helvetica').text(pedidoData.cliente.nombreSubUbicacion, colIzquierda + 65, currentY, { width: anchoTexto - 15, ellipsis: true });
                 currentY += 15; // Reducido espacio vertical
               }
               
@@ -328,15 +267,12 @@ const generarRemitoPDF = async (pedidoData, clienteData, productos) => {
                       `${pedidoData.userId.nombre} ${pedidoData.userId.apellido}` :
                       pedidoData.userId.nombre;
                   }
-                } else {
-                  // Es solo un ID, se mostrará "No especificado"
-                  console.log("Solo se recibió ID de usuario:", pedidoData.userId);
                 }
               }
               
               // Agregamos el supervisor y fecha en la columna derecha
-              doc.fontSize(8).font('Helvetica-Bold').text('Supervisor:', colDerecha, y);
-              doc.font('Helvetica').text(supervisorNombre, colDerecha + 60, y, { width: anchoTexto, ellipsis: true });
+              doc.fontSize(10).font('Helvetica-Bold').text('Supervisor:', colDerecha, y); // Aumentado de 9 a 10
+              doc.fontSize(10).font('Helvetica').text(supervisorNombre, colDerecha + 70, y, { width: anchoTexto - 10, ellipsis: true });
               
               // Formatear fecha
               let fechaFormateada = 'Sin fecha';
@@ -353,8 +289,8 @@ const generarRemitoPDF = async (pedidoData, clienteData, productos) => {
               }
               
               // Fecha de pedido (en la columna derecha)
-              doc.fontSize(8).font('Helvetica-Bold').text('Fecha de pedido:', colDerecha, y + 15);
-              doc.font('Helvetica').text(fechaFormateada, colDerecha + 85, y + 15, { width: anchoTexto - 55 });
+              doc.fontSize(10).font('Helvetica-Bold').text('Fecha de pedido:', colDerecha, y + 15); // Aumentado de 9 a 10
+              doc.fontSize(10).font('Helvetica').text(fechaFormateada, colDerecha + 95, y + 15, { width: anchoTexto - 65 });
               
               // Devolver la posición Y más baja entre ambas columnas para continuar dibujando
               return Math.max(currentY, y + 30);
@@ -387,11 +323,9 @@ const generarRemitoPDF = async (pedidoData, clienteData, productos) => {
               
               // Agregar la cabecera de la tabla de productos
               y = agregarCabeceraTabla(y);
-              console.log("Posición Y después de agregar cabecera:", y);
-              
+
               // IMPORTANTE: Comprobamos si hay productos para dibujar
               if (!productosExpandidos || productosExpandidos.length === 0) {
-                console.warn('No hay productos para agregar al PDF o no es un array válido');
                 doc.text('No hay productos disponibles para este pedido', 50, y + 10);
                 // Finalizar y retornar
                 finalizarDocumento();
@@ -413,27 +347,23 @@ const generarRemitoPDF = async (pedidoData, clienteData, productos) => {
                   const producto = productosExpandidos[i];
                   const cantidad = Number(producto.cantidad) || 0;
                   
-                  console.log(`Dibujando producto #${i+1}: ${producto.nombre || "Sin nombre"}, en Y=${y}, página=${paginaActual}`);
+                  // Calcular espacio necesario para mostrar el producto principal y sus componentes
+                  const alturaProducto = 15; // Para el producto principal
+                  const alturaComponentes = producto.esCombo && producto.componentes ? 
+                    (producto.componentes.length * 16) : 0; // Para los componentes si hay
                   
-                  // Calcular espacio necesario para mostrar al menos el producto principal
-                  const alturaProducto = 15; // Reducido de 30 a 20
-                  
-                  // Forzar a dibujar al menos un producto en la primera página
+                  // Calcular espacio total necesario
+                  const espacioNecesario = alturaProducto + alturaComponentes;
                   const espacioDisponible = doc.page.height - doc.page.margins.bottom - y;
-                  const espacioMinNecesario = alturaProducto;
                   
                   // Si estamos en la primera página y aún no hemos dibujado ningún producto,
                   // intentamos mostrar al menos el producto principal
                   const forzarProductoEnPrimeraPagina = paginaActual === 1 && itemsEnPaginaActual === 0;
                   
-                  // Si no hay espacio suficiente PARA EL PRODUCTO PRINCIPAL o hemos alcanzado el límite de elementos por página
+                  // Si no hay espacio suficiente o hemos alcanzado el límite de elementos por página
                   // Y no estamos forzando a mostrar al menos un producto en la primera página
-                  if ((espacioDisponible < espacioMinNecesario || itemsEnPaginaActual >= productosPorPagina) && 
+                  if ((espacioDisponible < alturaProducto || itemsEnPaginaActual >= productosPorPagina) && 
                       !forzarProductoEnPrimeraPagina) {
-                  
-                    console.log("Creando nueva página. Espacio disponible:", espacioDisponible, 
-                                "Espacio necesario mínimo:", espacioMinNecesario,
-                                "Items en página:", itemsEnPaginaActual);
                     
                     // Crear nueva página
                     doc.addPage();
@@ -449,41 +379,43 @@ const generarRemitoPDF = async (pedidoData, clienteData, productos) => {
                     productosPorPagina = PRODUCTOS_POR_PAGINA_RESTO;
                   }
                   
-                  // Dibujar fondo para este producto (alternar colores)
-                  const colorFondo = producto.esCombo ? '#e3f2fd' : (i % 2 === 0 ? '#F5F5F5' : '#FFFFFF');
-                  doc.fillColor(colorFondo).rect(30, y, 540, 20).fill(); // Ancho mayor, altura menor
+                  // Color destacado para combos
+                  const colorFondo = producto.esCombo ? '#e8f4fd' : (i % 2 === 0 ? '#F5F5F5' : '#FFFFFF');
                   
-                  // Dibujar datos del producto
+                  // Dibujar fondo para este producto
+                  doc.fillColor(colorFondo).rect(30, y, 540, 20).fill();
+                  
+                  // Color de texto para productos normales y combos
                   doc.fillColor(producto.esCombo ? '#2c3e50' : '#000000');
                   
+                  // Combos en negrita para distinguirlos
                   if (producto.esCombo) {
                     doc.font('Helvetica-Bold');
                   }
                   
+                  // Dibujar nombre del producto
                   const nombre = producto.nombre || 'Producto sin nombre';
-                  doc.fontSize(8); // Tamaño reducido
-                  doc.text(nombre, 50, y + 6, { width: 380 }); // Más ancho para el nombre
-                  doc.text(cantidad.toString(), 450, y + 6); // Posición ajustada
+                  doc.fontSize(8);
+                  doc.text(nombre, 50, y + 6, { width: 380 });
+                  doc.text(cantidad.toString(), 450, y + 6);
                   
                   // Restaurar estilo normal
                   doc.font('Helvetica');
                   
                   // Incrementar posición Y y contador
-                  y += 20; // Reducido de 30 a 20
+                  y += 20;
                   itemsEnPaginaActual++;
                   
                   // Marcar que ya tenemos al menos un producto en la primera página
                   if (paginaActual === 1) {
                     alMenosUnProductoEnPrimeraPagina = true;
-                    console.log("Producto principal dibujado en la primera página");
                   }
                   
-                  // Si es un combo, dibujar sus componentes
+                  // Si es un combo y tiene componentes, dibujarlos con sangría
                   if (producto.esCombo && producto.componentes && producto.componentes.length > 0) {
                     for (const componente of producto.componentes) {
                       // Verificar si necesitamos nueva página para este componente
-                      if (y + 16 > doc.page.height - doc.page.margins.bottom) { // Altura reducida
-                        console.log("Nueva página para componentes");
+                      if (y + 16 > doc.page.height - doc.page.margins.bottom) {
                         doc.addPage();
                         paginas++;
                         paginaActual++;
@@ -494,14 +426,21 @@ const generarRemitoPDF = async (pedidoData, clienteData, productos) => {
                         itemsEnPaginaActual = 0;
                       }
                       
-                      // Dibujar componente con tamaño reducido
+                      // Fondo blanco para componentes
                       doc.fillColor('#FFFFFF').rect(30, y, 540, 16).fill();
-                      doc.fillColor('#666666').fontSize(7); // Tamaño reducido
+                      
+                      // Texto en gris para componentes
+                      doc.fillColor('#666666').fontSize(7);
+                      
+                      // Mayor sangría visual (70 en lugar de 50) y guión para indicar componente
                       doc.text(`- ${componente.nombre}`, 70, y + 5, { width: 360 });
                       doc.text(componente.cantidad.toString(), 450, y + 5);
+                      
+                      // Restaurar estilo
                       doc.fontSize(8).fillColor('#000000');
                       
-                      y += 16; // Reducido de 25 a 16
+                      // Avanzar para el siguiente componente
+                      y += 16;
                       itemsEnPaginaActual++;
                     }
                   }
@@ -535,13 +474,13 @@ const generarRemitoPDF = async (pedidoData, clienteData, productos) => {
               doc.moveTo(350, y).lineTo(500, y).stroke();
               
               // Cambiar nombres de firmas a Supervisor/Operario
-              doc.fontSize(8);
+              doc.fontSize(10); // Aumentado de 9 a 10 para las firmas
               doc.text('Firma de Supervisor', 110, y + 5);
               doc.text('Firma de Operario', 390, y + 5);
               
               // Agregar detalle si existe
               y += 30; // Reducido de 50 a 30
-              doc.font('Helvetica-Bold').text('Detalle:', 30, y);
+              doc.font('Helvetica-Bold').fontSize(10).text('Detalle:', 30, y); // Aumentado de 9 a 10 para el detalle
               doc.font('Helvetica');
               
               // Obtener detalle del pedido, con manejo de posibles undefined
@@ -570,7 +509,6 @@ const generarRemitoPDF = async (pedidoData, clienteData, productos) => {
             const finalizarDocumento = () => {
               try {
                 doc.end();
-                console.log("Documento finalizado correctamente");
               } catch (error) {
                 console.error("Error al finalizar documento:", error);
                 // Intentar resolver con el buffer actual

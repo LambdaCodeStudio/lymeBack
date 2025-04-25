@@ -62,26 +62,58 @@ const downloadRemito = async (req, res) => {
         // Comprobar si el producto existe y está poblado correctamente
         const nombre = item.productoId && typeof item.productoId === 'object' && item.productoId.nombre 
           ? item.productoId.nombre 
-          : 'Producto no disponible';
+          : item.nombre || 'Producto no disponible';
           
-        const precio = item.productoId && typeof item.productoId === 'object' && item.productoId.precio
+        const precio = item.precio || 
+          (item.productoId && typeof item.productoId === 'object' && item.productoId.precio)
           ? item.productoId.precio
           : 0;
           
         // Información sobre si es combo
-        const esCombo = item.productoId && typeof item.productoId === 'object' 
+        const esCombo = item.esCombo || 
+          (item.productoId && typeof item.productoId === 'object' 
           ? !!item.productoId.esCombo
-          : false;
+          : false);
           
-        return {
+        // Comprobamos si el combo está personalizado
+        const personalizado = !!item.personalizado;
+        
+        // Creamos un objeto base para el producto
+        const productoObj = {
           nombre,
           cantidad: item.cantidad || 0,
           precio,
-          productoId: item.productoId, // Pasar el objeto completo para acceder a itemsCombo
-          esCombo
+          esCombo,
+          personalizado
         };
+        
+        // Si es un combo personalizado, incluimos los comboItems personalizados
+        if (esCombo && personalizado && item.comboItems && Array.isArray(item.comboItems)) {
+          productoObj.comboItems = item.comboItems.map(comboItem => ({
+            nombre: comboItem.nombre || 'Componente sin nombre',
+            cantidad: comboItem.cantidad || 0,
+            precio: comboItem.precio || 0
+          }));
+        } 
+        // Si no está personalizado, usamos la estructura original
+        else if (esCombo) {
+          productoObj.productoId = item.productoId; // Pasar el objeto completo para acceder a itemsCombo
+        }
+        
+        return productoObj;
       });
     }
+    
+    // Log para depurar la estructura de productos
+    console.log('PRODUCTOS PROCESADOS PARA PDF:');
+    productos.forEach((p, idx) => {
+      console.log(`Producto #${idx+1}:`, {
+        nombre: p.nombre,
+        esCombo: p.esCombo,
+        personalizado: p.personalizado,
+        comboItems: p.personalizado ? `${p.comboItems?.length || 0} items` : 'N/A'
+      });
+    });
     
     const pedidoData = {
       _id: pedido._id.toString(),
@@ -105,24 +137,6 @@ const downloadRemito = async (req, res) => {
       supervisor: pedidoData.supervisorId ? 'Incluido' : 'No incluido',
       productos: productos.length
     });
-    
-    // Si el cliente tiene información anidada, mostrarla para depuración
-    if (pedidoData.cliente) {
-      console.log('Información de cliente:', {
-        nombreCliente: pedidoData.cliente.nombreCliente,
-        nombreSubServicio: pedidoData.cliente.nombreSubServicio,
-        nombreSubUbicacion: pedidoData.cliente.nombreSubUbicacion
-      });
-    }
-    
-    // Si el supervisor está poblado, mostrar información para depuración
-    if (pedidoData.supervisorId && typeof pedidoData.supervisorId === 'object') {
-      console.log('Información de supervisor:', {
-        usuario: pedidoData.supervisorId.usuario,
-        nombre: pedidoData.supervisorId.nombre,
-        apellido: pedidoData.supervisorId.apellido
-      });
-    }
     
     // Usar el servicio de PDF importado
     const pdfBuffer = await generarRemitoPDF(pedidoData, null, productos);
