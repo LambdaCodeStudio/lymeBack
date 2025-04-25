@@ -53,6 +53,26 @@ const ubicacionClienteSchema = new mongoose.Schema({
     }
 });
 
+// Esquema para productos dentro de un combo
+const comboItemPedidoSchema = new mongoose.Schema({
+    productoId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Producto'
+    },
+    nombre: {
+        type: String,
+        required: true
+    },
+    cantidad: {
+        type: Number,
+        required: true,
+        min: [1, 'La cantidad mínima es 1']
+    },
+    precio: {
+        type: Number
+    }
+});
+
 const pedidoSchema = new mongoose.Schema({
     nPedido: {
         type: Number,
@@ -105,20 +125,49 @@ const pedidoSchema = new mongoose.Schema({
                 ref: 'Producto',
                 index: true // Índice para filtrar por producto
             },
+            nombre: {
+                type: String, // Nombre del producto/combo al momento de la compra
+                required: true
+            },
             cantidad: {
                 type: Number,
                 required: true,
                 min: [1, 'La cantidad mínima es 1']
             },
-            // Precio al momento de la compra (para historial)
-            precioUnitario: {
-                type: Number
+            precio: {
+                type: Number, // Precio al momento de la compra
+                required: true
+            },
+            // Campos para combos
+            esCombo: {
+                type: Boolean,
+                default: false
+            },
+            personalizado: {
+                type: Boolean,
+                default: false
+            },
+            comboItems: {
+                type: [comboItemPedidoSchema],
+                default: []
+            },
+            // Campos opcionales para categorización
+            categoria: {
+                type: String
+            },
+            subCategoria: {
+                type: String
             }
         }
     ],
     detalle: {
         type: String,
         default: ''
+    },
+    // Campo para metadata adicional
+    metadata: {
+        type: mongoose.Schema.Types.Mixed,
+        default: {}
     },
     // Estados del pedido actualizados
     estado: {

@@ -21,7 +21,7 @@ const obtenerPedidos = async (opciones = {}) => {
 };
 
 /**
- * Obtiene un pedido por su ID
+ * Obtiene un pedido por su ID con información completa
  */
 const obtenerPedidoPorId = async (id) => {
     return await Pedido.findById(id)
@@ -35,7 +35,7 @@ const obtenerPedidoPorId = async (id) => {
         })
         .populate({
             path: 'productos.productoId',
-            select: 'nombre precio descripcion categoria'
+            select: 'nombre precio descripcion categoria subCategoria esCombo itemsCombo'
         })
         .populate({
             path: 'cliente.clienteId',
@@ -340,6 +340,93 @@ const crearPedido = async (data) => {
             }
         }
         
+        // NUEVO: Procesar productos y combos para guardar información completa
+        if (data.productos && Array.isArray(data.productos)) {
+            // Array para procesar productos en paralelo
+            const productPromises = data.productos.map(async (producto) => {
+                // Obtener información completa del producto/combo
+                const productoInfo = await productoLogic.obtenerPorId(producto.productoId);
+                
+                if (!productoInfo) {
+                    throw new Error(`Producto no encontrado con ID: ${producto.productoId}`);
+                }
+                
+                // Completar campos básicos del producto con la información actual
+                producto.nombre = productoInfo.nombre;
+                producto.precio = productoInfo.precio;
+                producto.categoria = productoInfo.categoria;
+                producto.subCategoria = productoInfo.subCategoria;
+                
+                // Si es un combo
+                if (productoInfo.esCombo) {
+                    producto.esCombo = true;
+                    
+                    // Si es un combo personalizado (modificado por el usuario)
+                    if (producto.esComboEditado && producto.comboItems && Array.isArray(producto.comboItems)) {
+                        producto.personalizado = true;
+                        
+                        // Para cada producto en el combo, obtener y guardar información completa
+                        const comboItemsPromises = producto.comboItems.map(async (comboItem) => {
+                            try {
+                                const itemInfo = await productoLogic.obtenerPorId(comboItem.productoId);
+                                return {
+                                    productoId: comboItem.productoId,
+                                    nombre: itemInfo ? itemInfo.nombre : 'Producto no encontrado',
+                                    cantidad: comboItem.cantidad || 1,
+                                    precio: itemInfo ? itemInfo.precio : 0
+                                };
+                            } catch (err) {
+                                console.warn(`Error al obtener información del producto ${comboItem.productoId} en combo:`, err);
+                                return {
+                                    productoId: comboItem.productoId,
+                                    nombre: comboItem.nombre || 'Producto no encontrado',
+                                    cantidad: comboItem.cantidad || 1,
+                                    precio: 0
+                                };
+                            }
+                        });
+                        
+                        // Esperar a que se completen todas las consultas
+                        producto.comboItems = await Promise.all(comboItemsPromises);
+                    } 
+                    // Si es un combo estándar (no modificado)
+                    else {
+                        // Copiar los productos originales del combo
+                        const comboItemsPromises = productoInfo.itemsCombo.map(async (comboItem) => {
+                            try {
+                                const itemInfo = await productoLogic.obtenerPorId(comboItem.productoId);
+                                return {
+                                    productoId: comboItem.productoId,
+                                    nombre: itemInfo ? itemInfo.nombre : 'Producto no encontrado',
+                                    cantidad: comboItem.cantidad || 1,
+                                    precio: itemInfo ? itemInfo.precio : 0
+                                };
+                            } catch (err) {
+                                console.warn(`Error al obtener información del producto ${comboItem.productoId} en combo:`, err);
+                                return {
+                                    productoId: comboItem.productoId,
+                                    nombre: 'Producto no encontrado',
+                                    cantidad: comboItem.cantidad || 1,
+                                    precio: 0
+                                };
+                            }
+                        });
+                        
+                        producto.comboItems = await Promise.all(comboItemsPromises);
+                    }
+                }
+                
+                // Eliminar flags temporales que no necesitamos almacenar
+                delete producto.esComboEditado;
+                
+                return producto;
+            });
+            
+            // Esperar a que terminen todas las consultas y procesamientos
+            data.productos = await Promise.all(productPromises);
+        }
+        
+        // Crear el nuevo pedido con la información completa
         const nuevoPedido = new Pedido(data);
         
         // Reducimos el stock de cada producto

@@ -52,65 +52,117 @@ const generarRemitoPDF = async (pedidoData, clienteData, productos) => {
         try {
           const productosExpandidos = [];
           const Producto = mongoose.model("Producto");
+          
+          // NUEVO: Verificar si hay productos personalizados (combos editados) en metadata
+          const productosPersonalizados = pedidoData?.metadata?.productosPersonalizados || [];
+          
+          // Crear un mapa para búsqueda rápida por ID
+          const personalizadosPorId = {};
+          productosPersonalizados.forEach(prod => {
+            if (prod.productoId) {
+              const id = typeof prod.productoId === 'object' 
+                ? prod.productoId.toString() 
+                : prod.productoId.toString();
+              personalizadosPorId[id] = prod;
+            }
+          });
 
           for (const producto of productos) {
-            const productoObj = {
-              ...producto,
-              esCombo:
-                producto.productoId && producto.productoId.esCombo === true,
-              componentes: [],
-            };
-
-            productosExpandidos.push(productoObj);
-
-            // Si es un combo, obtener sus componentes
-            if (
-              productoObj.esCombo &&
-              producto.productoId &&
-              producto.productoId.itemsCombo &&
-              Array.isArray(producto.productoId.itemsCombo)
-            ) {
-              console.log(
-                `Procesando combo: ${producto.nombre} con ${producto.productoId.itemsCombo.length} componentes`
-              );
-
-              // Para cada componente del combo, obtener sus detalles
-              for (const item of producto.productoId.itemsCombo) {
-                try {
-                  if (!item.productoId) continue;
-
-                  // Si el componente ya está poblado
-                  if (
-                    typeof item.productoId === "object" &&
-                    item.productoId.nombre
-                  ) {
+            // Obtener el ID del producto para comprobar personalizaciones
+            const productoId = typeof producto.productoId === 'object' 
+              ? producto.productoId._id.toString() 
+              : producto.productoId.toString();
+            
+            // Verificar si este producto tiene una versión personalizada (combo editado)
+            const personalizado = personalizadosPorId[productoId];
+            
+            if (personalizado) {
+              // Usar la versión personalizada del combo
+              console.log(`Procesando combo personalizado: ${producto.nombre || personalizado.nombre}`);
+              
+              const productoObj = {
+                ...producto,
+                nombre: personalizado.nombre || producto.nombre,
+                esCombo: true,
+                componentes: []
+              };
+              
+              productosExpandidos.push(productoObj);
+              
+              // Procesar los componentes del combo personalizado
+              if (personalizado.comboItems && Array.isArray(personalizado.comboItems)) {
+                console.log(`Combo personalizado con ${personalizado.comboItems.length} componentes`);
+                
+                for (const item of personalizado.comboItems) {
+                  try {
                     productoObj.componentes.push({
-                      nombre: item.productoId.nombre,
-                      cantidad: item.cantidad * producto.cantidad, // Multiplicar por la cantidad del combo
+                      nombre: item.nombre,
+                      cantidad: item.cantidad * producto.cantidad // Multiplicar por la cantidad del combo
                     });
-                  } else {
-                    // Si necesitamos poblar el componente
-                    const id =
-                      typeof item.productoId === "object"
-                        ? item.productoId._id
-                        : item.productoId;
-                    const componenteProducto = await Producto.findById(
-                      id
-                    ).select("nombre");
+                  } catch (error) {
+                    console.error('Error al procesar componente de combo personalizado:', error);
+                  }
+                }
+              }
+            } else {
+              // Procesamiento estándar para productos normales y combos no editados
+              const productoObj = {
+                ...producto,
+                esCombo: producto.productoId && producto.productoId.esCombo === true,
+                componentes: [],
+              };
 
-                    if (componenteProducto) {
+              productosExpandidos.push(productoObj);
+
+              // Si es un combo, obtener sus componentes
+              if (
+                productoObj.esCombo &&
+                producto.productoId &&
+                producto.productoId.itemsCombo &&
+                Array.isArray(producto.productoId.itemsCombo)
+              ) {
+                console.log(
+                  `Procesando combo: ${producto.nombre} con ${producto.productoId.itemsCombo.length} componentes`
+                );
+
+                // Para cada componente del combo, obtener sus detalles
+                for (const item of producto.productoId.itemsCombo) {
+                  try {
+                    if (!item.productoId) continue;
+
+                    // Si el componente ya está poblado
+                    if (
+                      typeof item.productoId === "object" &&
+                      item.productoId.nombre
+                    ) {
                       productoObj.componentes.push({
-                        nombre: componenteProducto.nombre,
+                        nombre: item.productoId.nombre,
                         cantidad: item.cantidad * producto.cantidad, // Multiplicar por la cantidad del combo
                       });
+                    } else {
+                      // Si necesitamos poblar el componente
+                      const id =
+                        typeof item.productoId === "object"
+                          ? item.productoId._id
+                          : item.productoId;
+                      const componenteProducto = await Producto.findById(
+                        id
+                      ).select("nombre");
+
+                      if (componenteProducto) {
+                        productoObj.componentes.push({
+                          nombre: componenteProducto.nombre,
+                          cantidad: item.cantidad * producto.cantidad, // Multiplicar por la cantidad del combo
+                        });
+                      }
                     }
+                  } catch (compError) {
+                    console.error(
+                      `Error al procesar componente de combo:`,
+                      compError
+                    );
+                    // Continuar con el siguiente componente
                   }
-                } catch (compError) {
-                  console.error(
-                    `Error al procesar componente de combo:`,
-                    compError
-                  );
-                  // Continuar con el siguiente componente
                 }
               }
             }

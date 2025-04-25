@@ -84,6 +84,8 @@ exports.getPedidoById = async (req, res) => {
             return res.status(404).json({ mensaje: 'Pedido no encontrado' });
         }
         
+        // No es necesario transformar los datos aquí, ya que el esquema 
+        // ahora almacena toda la información necesaria de los productos y combos
         res.json(pedido);
     } catch (error) {
         console.error('Error al obtener pedido por ID:', error);
@@ -377,6 +379,19 @@ exports.createPedido = async (req, res) => {
             return res.status(400).json({ mensaje: 'Se requiere al menos un producto en el pedido' });
         }
 
+        // Verificar estructura de productos y combos personalizados
+        for (const producto of req.body.productos) {
+            // Verificar que cada producto tiene los campos básicos necesarios
+            if (!producto.productoId) {
+                return res.status(400).json({ mensaje: 'Todos los productos deben tener un productoId' });
+            }
+            
+            // Validar estructura de combos si está presente
+            if (producto.esComboEditado && (!producto.comboItems || !Array.isArray(producto.comboItems) || producto.comboItems.length === 0)) {
+                return res.status(400).json({ mensaje: 'Los combos editados deben incluir comboItems con al menos un producto' });
+            }
+        }
+
         // Agregar userId desde el token de autenticación si está disponible
         if (req.user && req.user.id && !req.body.userId) {
             // Si es un operario, obtener su supervisor asignado y usar ese ID
@@ -434,9 +449,6 @@ exports.createPedido = async (req, res) => {
             }
         }
 
-        // El código para operarios creando pedidos para otros usuarios ya no es necesario aquí
-        // ya que el userId siempre será el supervisor cuando un operario crea un pedido
-        
         // Para casos especiales donde se quiere forzar a mantener el userId original
         if (req.user && req.body.mantenerUsuarioOriginal === true) {
             // Mantener el userId tal como está, pero incluir metadatos
@@ -458,7 +470,8 @@ exports.createPedido = async (req, res) => {
             req.body.estado = 'pendiente';
         }
 
-        // Crear el pedido
+        // Crear el pedido - La lógica de procesamiento de productos y combos
+        // se maneja en pedidoLogic.crearPedido
         const pedido = await pedidoLogic.crearPedido(req.body);
         res.status(201).json(pedido);
     } catch (error) {
