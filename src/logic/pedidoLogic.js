@@ -1031,14 +1031,18 @@ const marcarPedidoEnPreparacion = async (id, userId) => {
         throw new Error('Solo se pueden marcar como en preparación pedidos aprobados por supervisor o aprobados definitivamente');
     }
     
-    // Actualizar el estado del pedido
-    pedido.estado = 'en_preparacion';
-    pedido.fechaPreparacion = new Date();
-    pedido.usuarioPreparacion = userId;
+    // Actualizar SOLO los campos necesarios del pedido, manteniendo el resto intacto
+    // En lugar de crear un nuevo documento o modificar todo el objeto
+    await Pedido.findByIdAndUpdate(id, {
+        $set: {
+            estado: 'en_preparacion',
+            fechaPreparacion: new Date(),
+            usuarioPreparacion: userId
+        }
+    });
     
-    await pedido.save();
-    
-    return pedido;
+    // Obtener y devolver el pedido actualizado
+    return await Pedido.findById(id);
 };
 
 /**
@@ -1059,14 +1063,17 @@ const marcarPedidoEntregado = async (id, userId) => {
         throw new Error('Solo se pueden marcar como entregados pedidos en preparación');
     }
     
-    // Actualizar el estado del pedido
-    pedido.estado = 'entregado';
-    pedido.fechaEntrega = new Date();
-    pedido.usuarioEntrega = userId;
+    // Actualizar SOLO los campos necesarios del pedido
+    await Pedido.findByIdAndUpdate(id, {
+        $set: {
+            estado: 'entregado',
+            fechaEntrega: new Date(),
+            usuarioEntrega: userId
+        }
+    });
     
-    await pedido.save();
-    
-    return pedido;
+    // Obtener y devolver el pedido actualizado
+    return await Pedido.findById(id);
 };
 
 /**

@@ -844,8 +844,14 @@ exports.marcarPedidoEnPreparacion = async (req, res) => {
             });
         }
 
-        // Marcar el pedido como en preparación
-        const pedidoActualizado = await pedidoLogic.marcarPedidoEnPreparacion(pedidoId, userId);
+        // Usar findByIdAndUpdate en lugar de pedidoLogic para evitar problemas de validación
+        await Pedido.findByIdAndUpdate(pedidoId, {
+            $set: {
+                estado: 'en_preparacion',
+                fechaPreparacion: new Date(),
+                usuarioPreparacion: userId
+            }
+        });
         
         // Obtener el pedido actualizado con información completa
         const pedidoPreparacion = await Pedido.findById(pedidoId)
@@ -901,8 +907,14 @@ exports.marcarPedidoEntregado = async (req, res) => {
             });
         }
 
-        // Marcar el pedido como entregado
-        const pedidoActualizado = await pedidoLogic.marcarPedidoEntregado(pedidoId, userId);
+        // Usar findByIdAndUpdate directamente en lugar de pedidoLogic
+        await Pedido.findByIdAndUpdate(pedidoId, {
+            $set: {
+                estado: 'entregado',
+                fechaEntrega: new Date(),
+                usuarioEntrega: userId
+            }
+        });
         
         // Obtener el pedido actualizado con información completa
         const pedidoEntregado = await Pedido.findById(pedidoId)

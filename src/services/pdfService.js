@@ -171,8 +171,8 @@ const generarRemitoPDF = async (pedidoData, clienteData, productos) => {
 
             // Variables de paginación y posicionamiento
             let paginaActual = 1;
-            let paginas = 1;
             let totalPaginas = 1; // Se calculará correctamente al final
+            let todasLasPaginas = []; // Almacenará referencias a todas las páginas creadas
 
             // Función para agregar el título del documento
             const agregarTitulo = () => {
@@ -315,8 +315,92 @@ const generarRemitoPDF = async (pedidoData, clienteData, productos) => {
               return posY + 20; // Devolver la nueva posición Y (altura reducida)
             };
 
+            // Función para agregar sección de firmas y detalle al final del documento
+            const agregarFirmasYDetalle = () => {
+              // Asegurar que estamos en la última página
+              if (doc.bufferedPageRange().count > 0) {
+                doc.switchToPage(doc.bufferedPageRange().count - 1);
+              }
+              
+              // Espacio mínimo necesario para firmas y detalle
+              const espacioMinimo = 100; // Reducido de 150 a 100 para optimizar
+              
+              // La posición actual del cursor
+              const posicionActualY = doc.y;
+              
+              // Si no hay suficiente espacio en la página actual, crear una nueva
+              const espacioDisponible = doc.page.height - doc.page.margins.bottom - posicionActualY;
+              
+              if (espacioDisponible < espacioMinimo) {
+                // Crear nueva página solo para firmas
+                doc.addPage();
+                todasLasPaginas.push(doc.page);
+                paginaActual++;
+                
+                // Agregar título en la nueva página
+                agregarTitulo();
+                
+                // Posicionar para firmas (dejar un espacio después del título)
+                let y = 150;
+                
+                // Dibujar líneas para firmas
+                doc.moveTo(80, y).lineTo(230, y).stroke();
+                doc.moveTo(350, y).lineTo(500, y).stroke();
+                
+                // Cambiar nombres de firmas a Supervisor/Operario
+                doc.fontSize(10);
+                doc.text('Firma de Supervisor', 110, y + 5);
+                doc.text('Firma de Operario', 390, y + 5);
+                
+                // Agregar detalle si existe
+                y += 30;
+                doc.font('Helvetica-Bold').fontSize(10).text('Detalle:', 30, y);
+                doc.font('Helvetica');
+                
+                // Obtener detalle del pedido, con manejo de posibles undefined
+                const detalle = pedidoData.detalle || 'Sin detalle';
+                
+                // Dibujar detalle con ajuste de texto
+                doc.text(detalle, 30, y + 15, {
+                  width: 540,
+                  align: 'left'
+                });
+              } else {
+                // Hay espacio en la página actual, colocar firmas y detalle aquí
+                
+                // Dejar un pequeño espacio
+                let y = posicionActualY + 30;
+                
+                // Dibujar líneas para firmas
+                doc.moveTo(80, y).lineTo(230, y).stroke();
+                doc.moveTo(350, y).lineTo(500, y).stroke();
+                
+                // Cambiar nombres de firmas a Supervisor/Operario
+                doc.fontSize(10);
+                doc.text('Firma de Supervisor', 110, y + 5);
+                doc.text('Firma de Operario', 390, y + 5);
+                
+                // Agregar detalle si existe
+                y += 30;
+                doc.font('Helvetica-Bold').fontSize(10).text('Detalle:', 30, y);
+                doc.font('Helvetica');
+                
+                // Obtener detalle del pedido, con manejo de posibles undefined
+                const detalle = pedidoData.detalle || 'Sin detalle';
+                
+                // Dibujar detalle con ajuste de texto
+                doc.text(detalle, 30, y + 15, {
+                  width: 540,
+                  align: 'left'
+                });
+              }
+            };
+
             // Función principal para dibujar todo el PDF
             const dibujarPDF = () => {
+              // Guardar la primera página
+              todasLasPaginas.push(doc.page);
+              
               // Primera página - encabezado y datos simplificados
               agregarTitulo();
               let y = agregarInfoPedido();
@@ -327,19 +411,22 @@ const generarRemitoPDF = async (pedidoData, clienteData, productos) => {
               // IMPORTANTE: Comprobamos si hay productos para dibujar
               if (!productosExpandidos || productosExpandidos.length === 0) {
                 doc.text('No hay productos disponibles para este pedido', 50, y + 10);
+                
+                // Agregar sección de firmas y detalle al final
+                agregarFirmasYDetalle();
+                
                 // Finalizar y retornar
                 finalizarDocumento();
                 return;
               }
               
-              // Variables para seguimiento - AUMENTADO considerablemente
-              const PRODUCTOS_POR_PAGINA_PRIMERA = 35; // Aumentado de 12 a 20
-              const PRODUCTOS_POR_PAGINA_RESTO = 35;   // Aumentado de 25 a 35
-              let itemsEnPaginaActual = 0;
-              let productosPorPagina = PRODUCTOS_POR_PAGINA_PRIMERA;
+              // Variables para seguimiento - Optimizadas para usar el máximo espacio en todas las páginas
+              // Ya no reducimos espacio en la primera página, usamos todo el disponible
+              const ALTURA_ITEM_NORMAL = 20;
+              const ALTURA_COMPONENTE = 16;
+              const MARGEN_SEGURIDAD = 50; // Margen de seguridad para evitar cortes
               
-              // Flag para asegurarnos de que al menos un producto se muestre en la primera página
-              let alMenosUnProductoEnPrimeraPagina = false;
+              let itemsEnPaginaActual = 0;
               
               // Dibujar productos uno por uno
               for (let i = 0; i < productosExpandidos.length; i++) {
@@ -348,26 +435,19 @@ const generarRemitoPDF = async (pedidoData, clienteData, productos) => {
                   const cantidad = Number(producto.cantidad) || 0;
                   
                   // Calcular espacio necesario para mostrar el producto principal y sus componentes
-                  const alturaProducto = 15; // Para el producto principal
+                  const alturaProducto = ALTURA_ITEM_NORMAL; // Para el producto principal
                   const alturaComponentes = producto.esCombo && producto.componentes ? 
-                    (producto.componentes.length * 16) : 0; // Para los componentes si hay
+                    (producto.componentes.length * ALTURA_COMPONENTE) : 0; // Para los componentes si hay
                   
                   // Calcular espacio total necesario
                   const espacioNecesario = alturaProducto + alturaComponentes;
-                  const espacioDisponible = doc.page.height - doc.page.margins.bottom - y;
+                  const espacioDisponible = doc.page.height - doc.page.margins.bottom - y - MARGEN_SEGURIDAD;
                   
-                  // Si estamos en la primera página y aún no hemos dibujado ningún producto,
-                  // intentamos mostrar al menos el producto principal
-                  const forzarProductoEnPrimeraPagina = paginaActual === 1 && itemsEnPaginaActual === 0;
-                  
-                  // Si no hay espacio suficiente o hemos alcanzado el límite de elementos por página
-                  // Y no estamos forzando a mostrar al menos un producto en la primera página
-                  if ((espacioDisponible < alturaProducto || itemsEnPaginaActual >= productosPorPagina) && 
-                      !forzarProductoEnPrimeraPagina) {
-                    
+                  // Si no hay espacio suficiente para este producto y sus componentes
+                  if (espacioDisponible < espacioNecesario) {
                     // Crear nueva página
                     doc.addPage();
-                    paginas++;
+                    todasLasPaginas.push(doc.page);
                     paginaActual++;
                     
                     // Agregar título y cabecera en la nueva página
@@ -376,7 +456,6 @@ const generarRemitoPDF = async (pedidoData, clienteData, productos) => {
                     
                     // Resetear contador de elementos en la página
                     itemsEnPaginaActual = 0;
-                    productosPorPagina = PRODUCTOS_POR_PAGINA_RESTO;
                   }
                   
                   // Color destacado para combos
@@ -403,21 +482,16 @@ const generarRemitoPDF = async (pedidoData, clienteData, productos) => {
                   doc.font('Helvetica');
                   
                   // Incrementar posición Y y contador
-                  y += 20;
+                  y += ALTURA_ITEM_NORMAL;
                   itemsEnPaginaActual++;
-                  
-                  // Marcar que ya tenemos al menos un producto en la primera página
-                  if (paginaActual === 1) {
-                    alMenosUnProductoEnPrimeraPagina = true;
-                  }
                   
                   // Si es un combo y tiene componentes, dibujarlos con sangría
                   if (producto.esCombo && producto.componentes && producto.componentes.length > 0) {
                     for (const componente of producto.componentes) {
                       // Verificar si necesitamos nueva página para este componente
-                      if (y + 16 > doc.page.height - doc.page.margins.bottom) {
+                      if (y + ALTURA_COMPONENTE > doc.page.height - doc.page.margins.bottom - MARGEN_SEGURIDAD) {
                         doc.addPage();
-                        paginas++;
+                        todasLasPaginas.push(doc.page);
                         paginaActual++;
                         
                         agregarTitulo();
@@ -427,7 +501,7 @@ const generarRemitoPDF = async (pedidoData, clienteData, productos) => {
                       }
                       
                       // Fondo blanco para componentes
-                      doc.fillColor('#FFFFFF').rect(30, y, 540, 16).fill();
+                      doc.fillColor('#FFFFFF').rect(30, y, 540, ALTURA_COMPONENTE).fill();
                       
                       // Texto en gris para componentes
                       doc.fillColor('#666666').fontSize(7);
@@ -440,7 +514,7 @@ const generarRemitoPDF = async (pedidoData, clienteData, productos) => {
                       doc.fontSize(8).fillColor('#000000');
                       
                       // Avanzar para el siguiente componente
-                      y += 16;
+                      y += ALTURA_COMPONENTE;
                       itemsEnPaginaActual++;
                     }
                   }
@@ -451,52 +525,14 @@ const generarRemitoPDF = async (pedidoData, clienteData, productos) => {
                 }
               }
               
-              // Calcular espacio restante y verificar si las firmas caben
-              const espacioRestante = doc.page.height - doc.page.margins.bottom - y;
+              // Después de dibujar todos los productos, agregar firmas y detalle
+              agregarFirmasYDetalle();
               
-              // Sección para firmas y detalle - optimizada para aprovechar espacio vertical
-              if (espacioRestante < 75) { // Reducido de 200 a 150 para ser más eficiente
-                // No hay espacio para firmas, crear nueva página
-                doc.addPage();
-                paginas++;
-                y = 150;
-              } else {
-                // Si hay espacio pero es mucho, reducirlo
-                if (espacioRestante > 100) {
-                  y = doc.page.height - doc.page.margins.bottom - 150;
-                } else {
-                  y += 20; // Solo un pequeño espacio
-                }
-              }
-              
-              // Dibujar líneas para firmas
-              doc.moveTo(80, y).lineTo(230, y).stroke();
-              doc.moveTo(350, y).lineTo(500, y).stroke();
-              
-              // Cambiar nombres de firmas a Supervisor/Operario
-              doc.fontSize(10); // Aumentado de 9 a 10 para las firmas
-              doc.text('Firma de Supervisor', 110, y + 5);
-              doc.text('Firma de Operario', 390, y + 5);
-              
-              // Agregar detalle si existe
-              y += 30; // Reducido de 50 a 30
-              doc.font('Helvetica-Bold').fontSize(10).text('Detalle:', 30, y); // Aumentado de 9 a 10 para el detalle
-              doc.font('Helvetica');
-              
-              // Obtener detalle del pedido, con manejo de posibles undefined
-              const detalle = pedidoData.detalle || 'Sin detalle';
-              
-              // Dibujar detalle con ajuste de texto
-              doc.text(detalle, 30, y + 15, {
-                width: 540, // Mayor ancho
-                align: 'left'
-              });
-              
-              // Actualizar total de páginas
-              totalPaginas = paginas;
+              // Calcular total de páginas
+              totalPaginas = paginaActual;
               
               // Numerar páginas (tamaño reducido)
-              for (let i = 0; i < totalPaginas; i++) {
+              for (let i = 0; i < doc.bufferedPageRange().count; i++) {
                 doc.switchToPage(i);
                 doc.fontSize(8).text(`Página ${i+1} de ${totalPaginas}`, 450, 30);
               }
