@@ -115,6 +115,7 @@ const downloadRemito = async (req, res) => {
       });
     });
     
+    // Crear estructura de datos para el PDF
     const pedidoData = {
       _id: pedido._id.toString(),
       numero: pedido.nPedido,
@@ -162,7 +163,7 @@ const downloadRemito = async (req, res) => {
  */
 const downloadExcel = async (req, res) => {
   try {
-    const { from, to, clienteId, productoId, supervisorId } = req.query;
+    const { from, to, clienteId, productoId, supervisorId, subServicioId, subUbicacionId } = req.query;
     
     if (!from || !to) {
       return res.status(400).json({ mensaje: 'Se requieren las fechas de inicio y fin' });
@@ -192,6 +193,16 @@ const downloadExcel = async (req, res) => {
       ];
     }
     
+    // Añadir filtro de subServicio si está presente
+    if (subServicioId) {
+      query['cliente.subServicioId'] = subServicioId;
+    }
+    
+    // Añadir filtro de subUbicación si está presente
+    if (subUbicacionId) {
+      query['cliente.subUbicacionId'] = subUbicacionId;
+    }
+    
     if (supervisorId) {
       query.$or = query.$or || [];
       query.$or.push(
@@ -205,6 +216,8 @@ const downloadExcel = async (req, res) => {
     if (productoId) {
       query['productos.productoId'] = productoId;
     }
+    
+    console.log('Ejecutando consulta con filtros:', JSON.stringify(query));
     
     // Ejecutar la consulta con población de datos relacionados
     const pedidos = await Pedido.find(query)
@@ -243,7 +256,7 @@ const downloadExcel = async (req, res) => {
  */
 const downloadReporteMensual = async (req, res) => {
   try {
-    const { from, to, clienteId } = req.query;
+    const { from, to, clienteId, subServicioId, subUbicacionId } = req.query;
     
     if (!from || !to) {
       return res.status(400).json({ mensaje: 'Se requieren las fechas de inicio y fin' });
@@ -264,13 +277,26 @@ const downloadReporteMensual = async (req, res) => {
       }
     };
     
-    // Añadir filtro de cliente si está presente
+    // Añadir filtros adicionales si están presentes
     if (clienteId) {
+      // Buscar por cliente como estructura anidada o por servicio tradicional
       query.$or = [
         { 'cliente.clienteId': clienteId },
         { clienteId: clienteId }
       ];
     }
+    
+    // Añadir filtro de subServicio si está presente
+    if (subServicioId) {
+      query['cliente.subServicioId'] = subServicioId;
+    }
+    
+    // Añadir filtro de subUbicación si está presente
+    if (subUbicacionId) {
+      query['cliente.subUbicacionId'] = subUbicacionId;
+    }
+    
+    console.log('Ejecutando consulta con filtros:', JSON.stringify(query));
     
     // Ejecutar la consulta con población adecuada
     const pedidos = await Pedido.find(query)
@@ -303,6 +329,7 @@ const downloadReporteMensual = async (req, res) => {
     });
   }
 };
+
 module.exports = {
   downloadRemito,
   downloadExcel,
