@@ -162,6 +162,11 @@ app.use('/api/producto', require('./routes/productoRoutes'));
 app.use('/api/cliente', require('./routes/clienteRoutes'));
 app.use('/api/pedido', require('./routes/pedidoRoutes'));
 app.use('/api/downloads', require('./routes/downloadRoutes'));
+app.use('/api/conductores', require('./routes/conductorRoutes'));
+app.use('/api/vehiculo', require('./routes/vehiculoRoutes'));
+app.use('/api/lyme', require('./routes/lymeRoutes'));
+app.use('/api/receptor', require('./routes/receptorRoutes'));
+
 
 // ===== MIDDLEWARE DE MANEJO DE ERRORES =====
 
