@@ -1,4 +1,4 @@
-const Conductor = require('../models/conductor');
+const Conductor = require('../models/conductorSchema');
 
 const getAll = async () => {
     return await Conductor.find();

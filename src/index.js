@@ -166,7 +166,7 @@ app.use('/api/conductores', require('./routes/conductorRoutes'));
 app.use('/api/vehiculo', require('./routes/vehiculoRoutes'));
 app.use('/api/lyme', require('./routes/lymeRoutes'));
 app.use('/api/receptor', require('./routes/receptorRoutes'));
-
+app.use('/api/remito', require('./routes/remitoRoutes'));
 
 // ===== MIDDLEWARE DE MANEJO DE ERRORES =====
 

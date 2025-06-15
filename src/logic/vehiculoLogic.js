@@ -1,4 +1,4 @@
-const Vehiculo = require('../models/vehiculo');
+const Vehiculo = require('../models/vehiculoSchema');
 
 const getAll = async () => {
     return await Vehiculo.find();

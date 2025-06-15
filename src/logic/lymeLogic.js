@@ -1,4 +1,4 @@
-const Lyme = require('../models/lyme');
+const Lyme = require('../models/lymeSchema');
 
 const getAll = async () => {
     return await Lyme.find();

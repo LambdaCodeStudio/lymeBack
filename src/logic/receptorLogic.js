@@ -1,4 +1,4 @@
-const Receptor = require('../models/receptor');
+const Receptor = require('../models/receptorSchema');
 
 const getAll = async () => {
     return await Receptor.find();
