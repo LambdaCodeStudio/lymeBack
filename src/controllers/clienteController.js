@@ -346,6 +346,11 @@ exports.createCliente = async (req, res) => {
       telefono: req.body.telefono || "",
       email: req.body.email || "",
       activo: req.body.activo !== undefined ? req.body.activo : true,
+      receptor: req.body.receptor || {
+        razonSocialNombre: "",
+        cuitDni: "",
+        telefEmail: ""
+      }
     };
 
     // Crear el cliente
@@ -401,6 +406,9 @@ exports.updateCliente = async (req, res) => {
       clienteData.telefono = req.body.telefono;
     if (req.body.email !== undefined) clienteData.email = req.body.email;
     if (req.body.activo !== undefined) clienteData.activo = req.body.activo;
+    
+    // *** AGREGAR ESTA LÍNEA ***
+    if (req.body.receptor !== undefined) clienteData.receptor = req.body.receptor;
 
     // Actualizar el cliente
     const clienteActualizado = await clienteLogic.actualizarCliente(
