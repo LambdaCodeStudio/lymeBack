@@ -1,5 +1,9 @@
+
+
 // src/models/clienteSchema.js
 const mongoose = require('mongoose');
+// Importar el schema del receptor
+const { receptorSchema } = require('./receptorSchema'); // Ajusta la ruta según tu estructura
 
 // Esquema para las sububicaciones (nivel más bajo)
 const subUbicacionSchema = new mongoose.Schema({
@@ -11,7 +15,8 @@ const subUbicacionSchema = new mongoose.Schema({
   descripcion: {
     type: String,
     default: ''
-  }
+  },
+  domEntrega:{type: String, require:true, trim:true},
 });
 
 // Esquema para los subservicios/ubicaciones (nivel medio)
@@ -52,6 +57,11 @@ const clienteSchema = new mongoose.Schema({
     type: String,
     default: ''
   },
+  // NUEVO: Datos del receptor embebidos
+  receptor: {
+    type: receptorSchema,
+    required: false // Puedes cambiarlo a true si siempre debe tener receptor
+  },
   // Lista de subservicios/ubicaciones
   subServicios: [subServicioSchema],
   // Referencia al usuario asignado (se mantiene para compatibilidad)
@@ -75,7 +85,8 @@ const clienteSchema = new mongoose.Schema({
   activo: {
     type: Boolean,
     default: true
-  }
+  },
+  
 }, {
   timestamps: true // Agregar createdAt y updatedAt
 });
@@ -85,5 +96,6 @@ clienteSchema.index({ nombre: 1 });
 clienteSchema.index({ userId: 1 });
 clienteSchema.index({ 'subServicios.nombre': 1 });
 clienteSchema.index({ 'subServicios.supervisorId': 1 }); // Nuevo índice para buscar por supervisor
+clienteSchema.index({ 'receptor.cuitDni': 1 }); // Nuevo índice para buscar por CUIT/DNI del receptor
 
 module.exports = mongoose.model('Cliente', clienteSchema);
