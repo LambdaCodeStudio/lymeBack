@@ -68,7 +68,8 @@ const generarRemitoOficial = async (datosRemito) => {
       };
 
       // Usar datos del emisor proporcionados o valores por defecto de LYME S.A.
-      const emisor = datosRemito.emisor || {
+      // datosRemito.emisor || 
+      const emisor = {
         razonSocial: "LYME S.A.",
         cuit: "30-63935839-5",
         condicionIVA: "Resp Inscripto",
@@ -109,7 +110,7 @@ const generarRemitoOficial = async (datosRemito) => {
       currentY += 80;
 
       // 2. BLOQUES PRINCIPALES: Emisor y Receptor
-      const bloqueHeight = 100;
+      const bloqueHeight = 105; // Ajustado sin líneas
       const bloqueWidth = 260;
       const separacion = 15;
 
@@ -132,13 +133,15 @@ const generarRemitoOficial = async (datosRemito) => {
       doc.text(emisor.razonSocial, 40, emisorY);
       
       emisorY += 12;
-      doc.fontSize(8).font('Helvetica');
+      doc.fontSize(9).font('Helvetica-Bold');
       doc.text(`CUIT: ${emisor.cuit}`, 40, emisorY);
       
       emisorY += 10;
-      doc.text(`${emisor.condicionIVA}`, 40, emisorY);
+      doc.fontSize(9).font('Helvetica-Bold');
+      doc.text(`Condición frente al IVA: ${emisor.condicionIVA}`, 40, emisorY, { width: bloqueWidth - 20 });
       
       emisorY += 10;
+      doc.fontSize(9).font('Helvetica-Bold');
       doc.text(`Domicilio Fiscal: ${emisor.domicilioFiscal}`, 40, emisorY, { width: bloqueWidth - 20 });
       
       emisorY += 10;
@@ -165,27 +168,27 @@ const generarRemitoOficial = async (datosRemito) => {
       doc.fontSize(9).font('Helvetica-Bold');
       doc.text('Cliente:', receptorX + 10, receptorY);
       doc.fontSize(8).font('Helvetica');
-      const clienteNombre = datosRemito.receptor.razonSocial || datosRemito.receptor.nombreCliente || 'No especificado';
-      doc.text(clienteNombre, receptorX + 50, receptorY, { width: bloqueWidth - 60 });
+      const clienteNombre = datosRemito.receptor.razonSocial || datosRemito.receptor.nombreCliente || 'Sin especificar';
+      doc.text(clienteNombre, receptorX + 45, receptorY, { width: bloqueWidth - 65 });
       
       receptorY += 12;
       doc.fontSize(9).font('Helvetica-Bold');
       doc.text('CUIT:', receptorX + 10, receptorY);
       doc.fontSize(8).font('Helvetica');
-      doc.text(datosRemito.receptor.cuitDni || 'No especificado', receptorX + 50, receptorY);
+      doc.text(datosRemito.receptor.cuitDni || 'Sin especificar', receptorX + 35, receptorY);
       
       receptorY += 12;
       doc.fontSize(9).font('Helvetica-Bold');
       doc.text('Domicilio:', receptorX + 10, receptorY);
       doc.fontSize(8).font('Helvetica');
-      doc.text(datosRemito.receptor.domicilioEntrega || 'No especificado', receptorX + 60, receptorY, { width: bloqueWidth - 70 });
+      doc.text(datosRemito.receptor.domicilioEntrega || 'Sin especificar', receptorX + 55, receptorY, { width: bloqueWidth - 75 });
       
       receptorY += 12;
       if (datosRemito.receptor.telefono) {
         doc.fontSize(9).font('Helvetica-Bold');
         doc.text('Teléfono:', receptorX + 10, receptorY);
         doc.fontSize(8).font('Helvetica');
-        doc.text(datosRemito.receptor.telefono, receptorX + 60, receptorY);
+        doc.text(datosRemito.receptor.telefono, receptorX + 55, receptorY);
         receptorY += 10;
       }
       
@@ -193,7 +196,7 @@ const generarRemitoOficial = async (datosRemito) => {
         doc.fontSize(9).font('Helvetica-Bold');
         doc.text('Email:', receptorX + 10, receptorY);
         doc.fontSize(8).font('Helvetica');
-        doc.text(datosRemito.receptor.email, receptorX + 50, receptorY, { width: bloqueWidth - 60 });
+        doc.text(datosRemito.receptor.email, receptorX + 55, receptorY, { width: bloqueWidth - 65 });
         receptorY += 10;
       }
       
@@ -201,7 +204,7 @@ const generarRemitoOficial = async (datosRemito) => {
         doc.fontSize(9).font('Helvetica-Bold');
         doc.text('Subservicio:', receptorX + 10, receptorY);
         doc.fontSize(8).font('Helvetica');
-        doc.text(datosRemito.receptor.nombreSubServicio, receptorX + 70, receptorY, { width: bloqueWidth - 80 });
+        doc.text(datosRemito.receptor.nombreSubServicio, receptorX + 65, receptorY, { width: bloqueWidth - 85 });
         receptorY += 10;
       }
       
@@ -209,13 +212,22 @@ const generarRemitoOficial = async (datosRemito) => {
         doc.fontSize(9).font('Helvetica-Bold');
         doc.text('Ubicación:', receptorX + 10, receptorY);
         doc.fontSize(8).font('Helvetica');
-        doc.text(datosRemito.receptor.nombreSubUbicacion, receptorX + 60, receptorY, { width: bloqueWidth - 70 });
+        doc.text(datosRemito.receptor.nombreSubUbicacion, receptorX + 65, receptorY, { width: bloqueWidth - 75 });
+        receptorY += 10;
       }
+      
+      // Agregar campo de Contacto en destino
+      doc.fontSize(9).font('Helvetica-Bold');
+      doc.fillColor('#000000');
+      doc.text('Contacto en destino:', receptorX + 10, receptorY);
+      doc.fontSize(8).font('Helvetica');
+      const contactoDestino = datosRemito.receptor.contactoDestino || 'Sin especificar';
+      doc.text(contactoDestino, receptorX + 100, receptorY, { width: bloqueWidth - 130 });
 
       currentY += bloqueHeight + 15;
 
-      // 3. BLOQUE DE TRANSPORTE
-      const transporteHeight = 70;
+      // 3. BLOQUE DE TRANSPORTE - Sin líneas de formulario
+      const transporteHeight = 90; // Ajustado al contenido sin líneas
       const transporteWidth = 535;
       
       doc.strokeColor('#2d8659');
@@ -227,80 +239,85 @@ const generarRemitoOficial = async (datosRemito) => {
       drawRoundedRect(31, currentY + 1, transporteWidth - 2, transporteHeight - 2, 14);
       doc.fill();
 
-      // Contenido del transporte
-      let transpY = currentY + 8;
+      // Contenido del transporte - Sin líneas
+      let transpY = currentY + 12;
       doc.fillColor('#000000');
       
       // Primera fila: Supervisor | Transportista | DNI
       doc.fontSize(9).font('Helvetica-Bold');
       doc.text('Supervisor:', 40, transpY);
       doc.fontSize(8).font('Helvetica');
-      const supervisorNombre = datosRemito.supervisor?.nombre || datosRemito.supervisor?.usuario || 'No especificado';
-      doc.text(supervisorNombre, 100, transpY);
+      const supervisorNombre = datosRemito.supervisor?.nombre || datosRemito.supervisor?.usuario || 'A definir';
+      doc.text(supervisorNombre, 95, transpY);
       
       doc.fontSize(9).font('Helvetica-Bold');
       doc.text('Transportista:', 230, transpY);
       doc.fontSize(8).font('Helvetica');
-      const transportistaNombre = datosRemito.transporte?.chofer?.nombre || 'No especificado';
-      doc.text(transportistaNombre, 300, transpY);
+      const transportistaNombre = datosRemito.transporte?.chofer?.nombre || 'A definir';
+      doc.text(transportistaNombre, 295, transpY);
       
-      if (datosRemito.transporte?.chofer?.dni) {
-        doc.fontSize(9).font('Helvetica-Bold');
-        doc.text('DNI:', 420, transpY);
-        doc.fontSize(8).font('Helvetica');
-        doc.text(datosRemito.transporte.chofer.dni, 450, transpY);
-      }
-
-      transpY += 15;
-
-      // Segunda fila: Vehículo + Fecha
       doc.fontSize(9).font('Helvetica-Bold');
-      doc.text('Vehículo:', 40, transpY);
+      doc.text('DNI:', 440, transpY);
       doc.fontSize(8).font('Helvetica');
+      const dni = datosRemito.transporte?.chofer?.dni || 'A definir';
+      doc.text(dni, 460, transpY);
+
+      transpY += 16; // Reducido de 20
+
+      // Segunda fila: Vehículo
+      doc.fontSize(9).font('Helvetica-Bold');
+      doc.text('Vehículo Marca/Modelo/Patente:', 40, transpY);
+      doc.fontSize(8).font('Helvetica');
+      
       if (datosRemito.transporte?.vehiculo) {
         const vehiculoCompleto = `${datosRemito.transporte.vehiculo.marca || ''} ${datosRemito.transporte.vehiculo.modelo || ''} - Patente: ${datosRemito.transporte.vehiculo.patente || ''}`.trim();
-        doc.text(vehiculoCompleto, 90, transpY, { width: 250 });
+        doc.text(vehiculoCompleto, 180, transpY, { width: 460 });
+      } else {
+        doc.text('Sin Definir', 180, transpY);
       }
 
-      // Fecha en la misma fila
+      transpY += 16; // Reducido de 20
+
+      // Tercera fila: Servicio y Fecha
       doc.fontSize(9).font('Helvetica-Bold');
-      doc.text('Fecha:', 380, transpY);
+      doc.text('Servicio:', 40, transpY);
       doc.fontSize(8).font('Helvetica');
-      doc.text(formatearFecha(datosRemito.fechaEmision), 420, transpY);
-
-      transpY += 15;
-
-      // Tercera fila: Servicio (si existe)
       if (datosRemito.servicio) {
-        doc.fontSize(9).font('Helvetica-Bold');
-        doc.text('Servicio:', 40, transpY);
-        doc.fontSize(8).font('Helvetica');
-        doc.text(datosRemito.servicio, 90, transpY, { width: 400 });
+        doc.text(datosRemito.servicio, 85, transpY, { width: 210 });
       }
-
-      currentY += transporteHeight + 10;
-
-      // Domicilios
-      if (datosRemito.transporte?.domicilioOrigen) {
-        doc.fontSize(9).font('Helvetica-Bold');
-        doc.text('Origen:', 40, currentY);
-        doc.fontSize(8).font('Helvetica');
-        doc.text(datosRemito.transporte.domicilioOrigen, 80, currentY, { width: 450 });
-        currentY += 12;
+      else {
+        doc.text('Sin Definir', 80, transpY);
       }
       
-      if (datosRemito.transporte?.domicilioDestino) {
-        doc.fontSize(9).font('Helvetica-Bold');
-        doc.text('Destino:', 40, currentY);
-        doc.fontSize(8).font('Helvetica');
-        doc.text(datosRemito.transporte.domicilioDestino, 80, currentY, { width: 450 });
-        currentY += 15;
-      }
+      doc.fontSize(9).font('Helvetica-Bold');
+      doc.text('Fecha de pedido:', 310, transpY);
+      doc.fontSize(8).font('Helvetica');
+      doc.text(formatearFecha(datosRemito.fechaEmision), 385, transpY);
+
+      transpY += 16; // Reducido de 20
+
+      // Cuarta fila: Domicilio origen
+      doc.fontSize(9).font('Helvetica-Bold');
+      doc.text('Domicilio origen:', 40, transpY);
+      doc.fontSize(8).font('Helvetica');
+      const origen = datosRemito.transporte?.domicilioOrigen || 'Sin especificar';
+      doc.text(origen, 115, transpY, { width: 420 });
+
+      transpY += 16; // Reducido de 20
+
+      // Quinta fila: Domicilio destino
+      doc.fontSize(9).font('Helvetica-Bold');
+      doc.text('Domicilio destino:', 40, transpY);
+      doc.fontSize(8).font('Helvetica');
+      const destino = datosRemito.transporte?.domicilioDestino || 'Sin especificar';
+      doc.text(destino, 120, transpY, { width: 415 });
+
+      currentY += transporteHeight + 15;
 
       // 4. TABLA DE PRODUCTOS
       const tablaY = currentY;
       const tablaHeight = 22;
-      const colWidths = [60, 300, 70, 105];
+      const colWidths = [60, 315, 55, 105]; // Ajustado: más espacio para producto, menos para CANT
       let colX = 30;
 
       // Header de la tabla
@@ -319,7 +336,7 @@ const generarRemitoOficial = async (datosRemito) => {
       doc.text('PRODUCTO', colX + 3, tablaY + 7);
       colX += colWidths[1];
       
-      doc.text('CANT', colX + 3, tablaY + 7);
+      doc.text('CANT', colX + 15, tablaY + 7); // Centrado en la columna
       colX += colWidths[2];
       
       doc.text('OBSERVACIÓN', colX + 3, tablaY + 7);
@@ -365,7 +382,7 @@ const generarRemitoOficial = async (datosRemito) => {
       
       // Variables para paginación eficiente
       const ALTURA_FILA = 18;
-      const MARGEN_INFERIOR = 80;
+      const MARGEN_INFERIOR = 100; // Aumentado para dar más espacio al detalle y firmas
       const ALTURA_PAGINA = doc.page.height;
       
       // Dibujar productos
@@ -389,7 +406,7 @@ const generarRemitoOficial = async (datosRemito) => {
           colX += colWidths[0];
           doc.text('PRODUCTO', colX + 3, currentY + 7);
           colX += colWidths[1];
-          doc.text('CANT', colX + 3, currentY + 7);
+          doc.text('CANT', colX + 15, currentY + 7); // Centrado en la columna
           colX += colWidths[2];
           doc.text('OBSERVACIÓN', colX + 3, currentY + 7);
           
@@ -433,8 +450,9 @@ const generarRemitoOficial = async (datosRemito) => {
         });
         colX += colWidths[1];
         
-        doc.text(producto.cantidad.toString(), colX + 2, currentY + 6, {
-          width: colWidths[2] - 4
+        doc.text(producto.cantidad.toString(), colX + 15, currentY + 6, {
+          width: colWidths[2] - 20,
+          align: 'center'
         });
         colX += colWidths[2];
         
@@ -453,51 +471,85 @@ const generarRemitoOficial = async (datosRemito) => {
         doc.moveTo(colX, tablaY).lineTo(colX, currentY).stroke();
       }
 
-      currentY += 15;
+      currentY += 25; // Más espacio después de la tabla
 
-      // 5. DETALLE
+      // 5. DETALLE - Mejorado con marco visual
       if (datosRemito.detalle) {
-        doc.fontSize(9).font('Helvetica-Bold').fillColor('#000000');
+        // Verificar si hay espacio suficiente
+        const espacioNecesario = 80; // Espacio para detalle + notas + firmas
+        if (currentY + espacioNecesario > ALTURA_PAGINA - 40) {
+          doc.addPage();
+          currentY = 40;
+        }
+
+        // Título del detalle
+        doc.fontSize(10).font('Helvetica-Bold').fillColor('#000000');
         doc.text('Detalle:', 30, currentY);
-        doc.fontSize(8).font('Helvetica');
-        doc.text(datosRemito.detalle, 30, currentY + 12, {
-          width: 535
-        });
-        currentY += 35;
+        currentY += 15;
+
+        // Calcular altura del detalle
+        const detalleOptions = {
+          width: 535,
+          align: 'left'
+        };
+        const detalleHeight = doc.heightOfString(datosRemito.detalle, detalleOptions);
+        
+        // Marco para el detalle
+        doc.strokeColor('#2d8659').lineWidth(1);
+        drawRoundedRect(30, currentY - 5, 535, detalleHeight + 10, 10);
+        doc.stroke();
+        
+        // Fondo sutil
+        doc.fillColor('#fafafa');
+        drawRoundedRect(31, currentY - 4, 533, detalleHeight + 8, 9);
+        doc.fill();
+        
+        // Texto del detalle
+        doc.fontSize(9).font('Helvetica').fillColor('#000000');
+        doc.text(datosRemito.detalle, 35, currentY, detalleOptions);
+        
+        currentY += detalleHeight + 20;
       }
 
-      // 6. NOTAS/ACLARACIONES
+      // 6. NOTAS/ACLARACIONES - Posicionamiento mejorado
       if (datosRemito.notas && Array.isArray(datosRemito.notas) && datosRemito.notas.length > 0) {
-        doc.fontSize(7).font('Helvetica').fillColor('#666666');
+        doc.fontSize(8).font('Helvetica-Oblique').fillColor('#666666');
         for (const nota of datosRemito.notas) {
           doc.text(nota, 30, currentY, {
             width: 535,
             align: 'center'
           });
-          currentY += 15;
+          currentY += 12;
         }
-        currentY += 10;
+        currentY += 15;
       }
 
-      // 7. FIRMAS
-      const firmaY = currentY + 15;
-      
-      if (firmaY > doc.page.height - 60) {
+      // 7. FIRMAS - Mejor posicionamiento
+      // Asegurar que las firmas siempre tengan espacio suficiente
+      const espacioFirmas = 60;
+      if (currentY + espacioFirmas > ALTURA_PAGINA - 30) {
         doc.addPage();
-        currentY = 50;
-      } else {
-        currentY = firmaY;
+        currentY = ALTURA_PAGINA - 100; // Posicionar firmas al final de la nueva página
+      } else if (currentY < ALTURA_PAGINA - 150) {
+        // Si hay mucho espacio, posicionar las firmas más abajo
+        currentY = Math.max(currentY + 20, ALTURA_PAGINA - 120);
       }
 
       // Líneas de firma
-      doc.strokeColor('#2d8659').lineWidth(1);
+      doc.strokeColor('#2d8659').lineWidth(1.5);
       doc.moveTo(70, currentY).lineTo(200, currentY).stroke();
       doc.moveTo(350, currentY).lineTo(480, currentY).stroke();
 
       // Etiquetas de firma
-      doc.fontSize(8).font('Helvetica').fillColor('#000000');
-      doc.text('Firma del Emisor', 105, currentY + 8);
-      doc.text('Firma del Receptor', 385, currentY + 8);
+      doc.fontSize(9).font('Helvetica').fillColor('#333333');
+      doc.text('Firma del Emisor', 105, currentY + 10, {
+        align: 'center',
+        width: 60
+      });
+      doc.text('Firma del Receptor', 385, currentY + 10, {
+        align: 'center',
+        width: 60
+      });
 
       // Finalizar documento
       doc.end();
